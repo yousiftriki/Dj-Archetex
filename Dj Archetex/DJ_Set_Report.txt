@@ -1,0 +1,8 @@
+==================== DJ SET ARCHITECT REPORT ====================
+Tracks stored: 1
+
+Title                 Artist            Genre       Key      BPM  Energy  Notes               
+------------------------------------------------------------------------------
+love me hate me       pig               rap         c min     75  Medium  4                   
+
+Average BPM: 75.0
