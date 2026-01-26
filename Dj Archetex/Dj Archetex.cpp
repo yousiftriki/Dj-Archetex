@@ -17,6 +17,10 @@ Concepts used (rubric):
 - Formatted output with setw + precision
 - File output with ofstream
 */
+#ifdef _DEBUG
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include "doctest.h"
+#endif
 
 #include <iostream>
 #include <iomanip>
@@ -88,6 +92,7 @@ void printTableHeader(ostream& out);
 void printTrackRow(ostream& out, const Track& t);
 
 // -------------------- Main --------------------
+#ifndef _DEBUG
 int main()
 {
     // Array of structs to store multiple tracks (weekly/mini library style)
@@ -159,6 +164,7 @@ int main()
 
     return 0;
 }
+#endif
 
 // -------------------- UI Functions --------------------
 
@@ -477,3 +483,146 @@ int countGenreMatches(const Track library[], int count, const string& genre)
     }
     return matches;
 }
+
+class DJLibrary
+{
+private:
+    Track tracks[MAX_TRACKS];
+    int count;
+
+public:
+    DJLibrary() : count(0) {}
+
+    int getTrackCount() const { return count; }
+
+    bool addTrackDirect(const Track& t)
+    {
+        // keep it simple: just prevent overflow
+        if (count >= MAX_TRACKS) return false;
+        tracks[count] = t;
+        count++;
+        return true;
+    }
+};
+
+#ifdef _DEBUG
+
+// Quick helper to make tracks easy in tests
+Track makeTrack(const string& title, const string& genre, int bpm, EnergyLevel e)
+{
+    Track t;
+    t.title = title;
+    t.artist = "Test";
+    t.genre = genre;
+    t.key = "Am";
+    t.bpm = bpm;
+    t.energy = e;
+    t.notes = "";
+    return t;
+}
+
+// -------------------- A) Calculations (4 tests) --------------------
+
+TEST_CASE("Average BPM: 0 tracks returns 0.0")
+{
+    Track lib[1];
+    CHECK(computeAverageBPM(lib, 0) == doctest::Approx(0.0));
+}
+
+TEST_CASE("Average BPM: 1 track")
+{
+    Track lib[1];
+    lib[0] = makeTrack("A", "House", 120, MEDIUM);
+    CHECK(computeAverageBPM(lib, 1) == doctest::Approx(120.0));
+}
+
+TEST_CASE("Average BPM: 2 tracks")
+{
+    Track lib[2];
+    lib[0] = makeTrack("A", "House", 120, MEDIUM);
+    lib[1] = makeTrack("B", "House", 140, HIGH);
+    CHECK(computeAverageBPM(lib, 2) == doctest::Approx(130.0));
+}
+
+TEST_CASE("Average BPM: 3 tracks")
+{
+    Track lib[3];
+    lib[0] = makeTrack("A", "House", 100, LOW);
+    lib[1] = makeTrack("B", "Techno", 110, MEDIUM);
+    lib[2] = makeTrack("C", "Techno", 130, HIGH);
+    CHECK(computeAverageBPM(lib, 3) == doctest::Approx(113.3333333));
+}
+
+// -------------------- B) Enum decision logic (3 tests) --------------------
+
+TEST_CASE("Energy enum: LOW prints 'Low'")
+{
+    CHECK(energyToString(LOW) == "Low");
+}
+
+TEST_CASE("Energy enum: MEDIUM prints 'Medium'")
+{
+    CHECK(energyToString(MEDIUM) == "Medium");
+}
+
+TEST_CASE("Energy enum: HIGH prints 'High'")
+{
+    CHECK(energyToString(HIGH) == "High");
+}
+
+// -------------------- C) Struct/array processing (3 tests) --------------------
+
+TEST_CASE("Genre matches: 0 matches")
+{
+    Track lib[2];
+    lib[0] = makeTrack("A", "House", 120, MEDIUM);
+    lib[1] = makeTrack("B", "Techno", 130, HIGH);
+
+    CHECK(countGenreMatches(lib, 2, "Trance") == 0);
+}
+
+TEST_CASE("Genre matches: some matches")
+{
+    Track lib[3];
+    lib[0] = makeTrack("A", "House", 120, MEDIUM);
+    lib[1] = makeTrack("B", "House", 125, HIGH);
+    lib[2] = makeTrack("C", "Techno", 130, HIGH);
+
+    CHECK(countGenreMatches(lib, 3, "House") == 2);
+}
+
+TEST_CASE("Genre matches: all matches")
+{
+    Track lib[3];
+    lib[0] = makeTrack("A", "House", 120, MEDIUM);
+    lib[1] = makeTrack("B", "House", 125, HIGH);
+    lib[2] = makeTrack("C", "House", 130, LOW);
+
+    CHECK(countGenreMatches(lib, 3, "House") == 3);
+}
+
+// -------------------- D) Class methods (2 tests) --------------------
+
+TEST_CASE("DJLibrary: addTrackDirect increases count")
+{
+    DJLibrary dj;
+    CHECK(dj.getTrackCount() == 0);
+
+    Track t = makeTrack("A", "House", 120, MEDIUM);
+    CHECK(dj.addTrackDirect(t) == true);
+    CHECK(dj.getTrackCount() == 1);
+}
+
+TEST_CASE("DJLibrary: cannot exceed MAX_TRACKS")
+{
+    DJLibrary dj;
+
+    Track t = makeTrack("A", "House", 120, MEDIUM);
+    for (int i = 0; i < MAX_TRACKS; i++)
+        CHECK(dj.addTrackDirect(t) == true);
+
+    CHECK(dj.getTrackCount() == MAX_TRACKS);
+    CHECK(dj.addTrackDirect(t) == false); // overflow guard
+}
+
+#endif
