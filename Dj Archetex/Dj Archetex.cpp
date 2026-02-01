@@ -295,7 +295,7 @@ EnergyLevel getEnergyFromUser()
 // Converts an EnergyLevel into a printable string.
 string energyToString(EnergyLevel e)
 {
-    if (e == LOW) return "Low";
+    if (e == LOW) return "LOW";
     if (e == MEDIUM) return "Medium";
     return "High";
 }
