@@ -156,7 +156,7 @@ int main()
             cout << "\nGoodbye, " << djName << "! Keep the crowd moving.\n";
             break;
         default:
-            // This should not happen due to validation, but it’s safe to include.
+            // This should not happen due to validation, but itâ€™s safe to include.
             cout << "Invalid choice.\n";
         }
 
@@ -295,7 +295,7 @@ EnergyLevel getEnergyFromUser()
 // Converts an EnergyLevel into a printable string.
 string energyToString(EnergyLevel e)
 {
-    if (e == LOW) return "Low";
+    if (e == LOW) return "LOW";
     if (e == MEDIUM) return "Medium";
     return "High";
 }
