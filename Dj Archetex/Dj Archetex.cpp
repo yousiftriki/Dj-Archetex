@@ -157,7 +157,7 @@ int main()
             cout << "\nGoodbye, " << djName << "! Keep the crowd moving.\n";
             break;
         default:
-            // This should not happen due to validation, but it’s safe to include.
+            // This should not happen due to validation, but itâ€™s safe to include.
             cout << "Invalid choice.\n";
         }
 

@@ -1,3 +1,4 @@
+![Tests](https://github.com/yousiftriki/Dj-Archetex/actions/workflows/tests.yml/badge.svg)
 # Dj Archetex
 Author: Yousif Triki
 Course: ITCS 2530 – C++ Programming
