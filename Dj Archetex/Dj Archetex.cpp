@@ -27,6 +27,7 @@ Concepts used (rubric):
 #include <fstream>
 #include <string>
 #include <limits>
+#include <sstream>
 
 using namespace std;
 
@@ -295,7 +296,7 @@ EnergyLevel getEnergyFromUser()
 // Converts an EnergyLevel into a printable string.
 string energyToString(EnergyLevel e)
 {
-    if (e == LOW) return "LOW";
+    if (e == LOW) return "Low";
     if (e == MEDIUM) return "Medium";
     return "High";
 }
@@ -505,6 +506,130 @@ public:
     }
 };
 
+class MixNotes
+{
+private:
+    string notes;
+
+public:
+    MixNotes() : notes("") {}
+    MixNotes(const string& n) : notes(n) {}
+
+    void setNotes(const string& n) { notes = n; }
+    string getNotes() const { return notes; }
+
+    // helper method (required)
+    bool hasNotes() const
+    {
+        return !notes.empty();
+    }
+};
+
+class TrackBase
+{
+protected:
+    string title;          // protected for derived access
+
+private:
+    int bpm;
+    EnergyLevel energy;
+
+public:
+    TrackBase() : title(""), bpm(0), energy(MEDIUM) {}
+
+    TrackBase(const string& t, int b, EnergyLevel e)
+        : title(t), bpm(b), energy(e) {
+    }
+
+    // getters/setters
+    string getTitle() const { return title; }
+    int getBpm() const { return bpm; }
+    EnergyLevel getEnergy() const { return energy; }
+
+    void setTitle(const string& t) { title = t; }
+    void setBpm(int b) { bpm = b; }
+    void setEnergy(EnergyLevel e) { energy = e; }
+
+    virtual void print(ostream& out) const
+    {
+        out << "Title: " << title << "\n";
+        out << "BPM: " << bpm << "\n";
+        out << "Energy: " << energyToString(energy) << "\n";
+    }
+
+    virtual ~TrackBase() {}
+};
+
+class LocalTrack : public TrackBase
+{
+private:
+    string filePath;   // new data member
+    MixNotes notes;    // composition
+
+public:
+    LocalTrack() : TrackBase(), filePath(""), notes() {}
+
+    LocalTrack(const string& t, int b, EnergyLevel e,
+        const string& path, const MixNotes& n)
+        : TrackBase(t, b, e), filePath(path), notes(n) {
+    }
+
+    void setFilePath(const string& p) { filePath = p; }
+    string getFilePath() const { return filePath; }
+
+    void setNotes(const MixNotes& n) { notes = n; }
+    MixNotes getNotes() const { return notes; }
+
+    void print(ostream& out) const override
+    {
+        TrackBase::print(out); // call base
+        out << "File Path: " << filePath << "\n";
+
+        if (notes.hasNotes())
+            out << "Notes: " << notes.getNotes() << "\n";
+        else
+            out << "Notes: (none)\n";
+    }
+};
+
+class StreamTrack : public TrackBase
+{
+private:
+    string platform;   // new data member
+    MixNotes notes;    // composition
+
+public:
+    StreamTrack() : TrackBase(), platform(""), notes() {}
+
+    StreamTrack(const string& t, int b, EnergyLevel e,
+        const string& plat, const MixNotes& n)
+        : TrackBase(t, b, e), platform(plat), notes(n) {
+    }
+
+    void setPlatform(const string& p) { platform = p; }
+    string getPlatform() const { return platform; }
+
+    void setNotes(const MixNotes& n) { notes = n; }
+    MixNotes getNotes() const { return notes; }
+
+    void print(ostream& out) const override
+    {
+        TrackBase::print(out); // call base
+        out << "Platform: " << platform << "\n";
+
+        if (notes.hasNotes())
+            out << "Notes: " << notes.getNotes() << "\n";
+        else
+            out << "Notes: (none)\n";
+    }
+};
+
+
+
+
+
+
+
 #ifdef _DEBUG
 
 // Quick helper to make tracks easy in tests
@@ -624,5 +749,45 @@ TEST_CASE("DJLibrary: cannot exceed MAX_TRACKS")
     CHECK(dj.getTrackCount() == MAX_TRACKS);
     CHECK(dj.addTrackDirect(t) == false); // overflow guard
 }
+
+
+TEST_CASE("MixNotes helper works")
+{
+    MixNotes n1;
+    MixNotes n2("Good transition");
+
+    CHECK(n1.hasNotes() == false);
+    CHECK(n2.hasNotes() == true);
+}
+
+TEST_CASE("Base constructor initializes fields")
+{
+    TrackBase t("Test", 128, HIGH);
+    CHECK(t.getTitle() == "Test");
+    CHECK(t.getBpm() == 128);
+    CHECK(t.getEnergy() == HIGH);
+}
+
+TEST_CASE("LocalTrack prints base + derived")
+{
+    MixNotes n("Drop after break");
+    LocalTrack t("Local", 124, MEDIUM, "track.wav", n);
+
+    ostringstream oss;
+    t.print(oss);
+    string out = oss.str();
+
+    CHECK(out.find("Title: Local") != string::npos);
+    CHECK(out.find("BPM: 124") != string::npos);
+    CHECK(out.find("File Path: track.wav") != string::npos);
+}
+
+TEST_CASE("StreamTrack stores platform correctly")
+{
+    MixNotes n;
+    StreamTrack s("Stream", 130, HIGH, "Spotify", n);
+    CHECK(s.getPlatform() == "Spotify");
+}
+
 
 #endif
