@@ -2,21 +2,32 @@
 DJ Set Architect (ITCS 2530 Starter Project)
 Author: Yousif Triki
 
-Purpose:
+Purpose (Original / Weeks 1-4):
 - Store DJ tracks in a small library (array of structs)
 - View a formatted table summary
 - Recommend next tracks based on BPM + energy rules
 - Save a report to a text file
 
+Week 05 Upgrade (Ch. 12 focus):
+- Abstract base class + virtual functions + polymorphism
+- Composition (MixNotes inside derived track types)
+- Manager class owns a dynamic array of base pointers (TrackBase**)
+- Dynamic allocation for objects (new/delete), no STL containers
+- Add/remove items, resize array, and clean up memory safely
+- Updated doctests to validate polymorphism + manager behavior
+
 Concepts used (rubric):
-- Constants (no magic numbers), enum, struct, array
-- Input validation (chapter 3: cin fail states, clear/ignore)
+- Constants (no magic numbers), enum, struct, array, classes
+- Input validation (cin fail states, clear/ignore)
 - Switch menu, compound if/else conditions
 - Loops: for, while, do-while
 - User-defined functions
 - Formatted output with setw + precision
 - File output with ofstream
+- Inheritance, composition, virtual functions, abstract classes
+- Dynamic memory with new/delete
 */
+
 #ifdef _DEBUG
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
@@ -32,25 +43,33 @@ Concepts used (rubric):
 using namespace std;
 
 // -------------------- Constants (avoid magic numbers) --------------------
+// Original (Weeks 1-4) library limits
 const int MAX_TRACKS = 7;        // Maximum number of tracks stored
-const int TITLE_W = 22;          // Column widths for table formatting
+
+// Original table widths
+const int TITLE_W = 22;         // Column widths for table formatting
 const int ARTIST_W = 18;
 const int GENRE_W = 12;
 const int KEY_W = 6;
 const int NOTE_W = 20;
 const int LINE_W = 78;
 
-const int BPM_MIN = 60;          // Valid BPM range
+// Week 5 display width for "Type" column
+const int TYPE_W = 12;
+
+// Validation ranges
+const int BPM_MIN = 60;
 const int BPM_MAX = 200;
 
-const int MENU_MIN = 1;          // Valid menu choice range
-const int MENU_MAX = 5;
+// Menu range (merged menu: original + week5)
+const int MENU_MIN = 1;
+const int MENU_MAX = 10;
 
 // -------------------- Enum --------------------
 // EnergyLevel models how intense a track feels in a set (meaningful for DJ planning).
 enum EnergyLevel { LOW = 1, MEDIUM = 2, HIGH = 3 };
 
-// -------------------- Struct --------------------
+// -------------------- Struct (Weeks 1-4) --------------------
 // Track groups all track data together (meaningful model for the hobby).
 struct Track
 {
@@ -78,7 +97,7 @@ double getValidatedDouble(const string& prompt, double minVal, double maxVal);
 EnergyLevel getEnergyFromUser();
 string energyToString(EnergyLevel e);
 
-// Main features
+// -------------------- Weeks 1-4 Features --------------------
 void addTrack(Track library[], int& count);
 void printLibrary(const Track library[], int count);
 void recommendNextTracks(const Track library[], int count);
@@ -88,21 +107,279 @@ void saveReportToFile(const Track library[], int count, const string& filename);
 double computeAverageBPM(const Track library[], int count);
 int countGenreMatches(const Track library[], int count, const string& genre);
 
-// Output helpers (reduces repeated table code)
-void printTableHeader(ostream& out);
+// Output helpers (Weeks 1-4)
+void printLegacyTableHeader(ostream& out);
 void printTrackRow(ostream& out, const Track& t);
+
+// -------------------- Week 5 Helpers --------------------
+int safeIndexFromUser(const string& prompt, int size);
+void printWeek5TableHeader(ostream& out);
+void printSeparator(ostream& out);
+
+// -------------------- Week 5: Composition Helper Class --------------------
+// MixNotes is a small helper class used inside derived classes (composition).
+class MixNotes
+{
+private:
+    string notes;
+
+public:
+    MixNotes() : notes("") {}
+    MixNotes(const string& n) : notes(n) {}
+
+    void setNotes(const string& n) { notes = n; }
+    string getNotes() const { return notes; }
+
+    // helper method (required)
+    bool hasNotes() const
+    {
+        return !notes.empty();
+    }
+};
+
+// -------------------- Week 5: Abstract Base Class --------------------
+// TrackBase is now an ABSTRACT base class.
+class TrackBase
+{
+protected:
+    string title;  // required protected for derived access
+
+private:
+    int bpm;
+    EnergyLevel energy;
+
+public:
+    TrackBase() : title(""), bpm(0), energy(MEDIUM) {}
+
+    TrackBase(const string& t, int b, EnergyLevel e)
+        : title(t), bpm(b), energy(e) {
+    }
+
+    // getters/setters
+    string getTitle() const { return title; }
+    int getBpm() const { return bpm; }
+    EnergyLevel getEnergy() const { return energy; }
+
+    void setTitle(const string& t) { title = t; }
+    void setBpm(int b) { bpm = b; }
+    void setEnergy(EnergyLevel e) { energy = e; }
+
+    // Week 5: print stays, but must be virtual (polymorphism)
+    virtual void print(ostream& out) const
+    {
+        out << left
+            << setw(TITLE_W) << title.substr(0, TITLE_W - 1)
+            << setw(TYPE_W) << getType()
+            << right << setw(6) << bpm << "  "
+            << left << setw(8) << energyToString(energy);
+    }
+
+    // Week 5: PURE VIRTUAL FUNCTION (makes class abstract)
+    virtual string getType() const = 0;
+
+    // Week 5: virtual destructor (critical for deleting via base pointer)
+    virtual ~TrackBase() {}
+};
+
+// -------------------- Week 5: Derived Class #1 --------------------
+class LocalTrack : public TrackBase
+{
+private:
+    string filePath;
+    MixNotes notes; // composition
+
+public:
+    LocalTrack() : TrackBase(), filePath(""), notes() {}
+
+    LocalTrack(const string& t, int b, EnergyLevel e,
+        const string& path, const MixNotes& n)
+        : TrackBase(t, b, e), filePath(path), notes(n) {
+    }
+
+    void setFilePath(const string& p) { filePath = p; }
+    string getFilePath() const { return filePath; }
+
+    void setNotes(const MixNotes& n) { notes = n; }
+    MixNotes getNotes() const { return notes; }
+
+    string getType() const override { return "LocalTrack"; }
+
+    void print(ostream& out) const override
+    {
+        TrackBase::print(out);
+        out << setw(KEY_W) << "" // spacer
+            << setw(NOTE_W) << (notes.hasNotes() ? notes.getNotes().substr(0, NOTE_W - 1) : "(none)")
+            << "  Path: " << filePath;
+    }
+};
+
+// -------------------- Week 5: Derived Class #2 --------------------
+class StreamTrack : public TrackBase
+{
+private:
+    string platform;
+    MixNotes notes; // composition
+
+public:
+    StreamTrack() : TrackBase(), platform(""), notes() {}
+
+    StreamTrack(const string& t, int b, EnergyLevel e,
+        const string& plat, const MixNotes& n)
+        : TrackBase(t, b, e), platform(plat), notes(n) {
+    }
+
+    void setPlatform(const string& p) { platform = p; }
+    string getPlatform() const { return platform; }
+
+    void setNotes(const MixNotes& n) { notes = n; }
+    MixNotes getNotes() const { return notes; }
+
+    string getType() const override { return "StreamTrack"; }
+
+    void print(ostream& out) const override
+    {
+        TrackBase::print(out);
+        out << setw(KEY_W) << "" // spacer
+            << setw(NOTE_W) << (notes.hasNotes() ? notes.getNotes().substr(0, NOTE_W - 1) : "(none)")
+            << "  Platform: " << platform;
+    }
+};
+
+// -------------------- Week 5: Manager Class --------------------
+// TrackManager OWNS a dynamic array of TrackBase* (double pointer array).
+// Responsible for resizing and deleting all dynamic objects it owns.
+class TrackManager
+{
+private:
+    TrackBase** items; // dynamic array of base pointers (required)
+    int size;          // current size (required)
+    int capacity;      // max size (required)
+
+    void resize(int newCap)
+    {
+        TrackBase** newItems = new TrackBase * [newCap];
+
+        // init all slots to nullptr (clean & safe)
+        for (int i = 0; i < newCap; i++)
+            newItems[i] = nullptr;
+
+        // copy existing pointers
+        for (int i = 0; i < size; i++)
+            newItems[i] = items[i];
+
+        delete[] items;
+        items = newItems;
+        capacity = newCap;
+    }
+
+    // Prevent copying to avoid double-free bugs
+    TrackManager(const TrackManager&) = delete;
+    TrackManager& operator=(const TrackManager&) = delete;
+
+public:
+    TrackManager(int cap = 2)
+        : items(nullptr), size(0), capacity(cap)
+    {
+        items = new TrackBase * [capacity];
+        for (int i = 0; i < capacity; i++)
+            items[i] = nullptr;
+    }
+
+    int getSize() const { return size; }
+    int getCapacity() const { return capacity; }
+
+    void add(TrackBase* p)
+    {
+        if (size >= capacity)
+            resize(capacity * 2);
+
+        items[size] = p;
+        size++;
+    }
+
+    bool removeAt(int index)
+    {
+        if (index < 0 || index >= size)
+            return false;
+
+        delete items[index]; // delete object itself
+
+        // shift left
+        for (int i = index; i < size - 1; i++)
+            items[i] = items[i + 1];
+
+        items[size - 1] = nullptr;
+        size--;
+
+        // optional shrink (simple + safe)
+        if (size > 0 && size <= capacity / 4 && capacity > 2)
+            resize(capacity / 2);
+
+        return true;
+    }
+
+    void printAll(ostream& out) const
+    {
+        if (size == 0)
+        {
+            out << "No tracks stored yet.\n";
+            return;
+        }
+
+        printWeek5TableHeader(out);
+
+        for (int i = 0; i < size; i++)
+        {
+            out << setw(4) << i << " ";
+            items[i]->print(out);   // polymorphic call
+            out << "\n";
+        }
+
+        printSeparator(out);
+    }
+
+    void saveReport(const string& filename) const
+    {
+        ofstream fout(filename.c_str());
+        if (!fout)
+        {
+            cout << "Could not open file: " << filename << "\n";
+            return;
+        }
+
+        fout << "==================== DJ SET ARCHITECT REPORT (Week 5) ====================\n";
+        fout << "Tracks stored: " << size << "\n\n";
+
+        printAll(fout);
+
+        fout.close();
+        cout << "Report saved to " << filename << "\n";
+    }
+
+    ~TrackManager()
+    {
+        // delete all objects (required)
+        for (int i = 0; i < size; i++)
+            delete items[i];
+
+        delete[] items;
+    }
+};
 
 // -------------------- Main --------------------
 #ifndef _DEBUG
 int main()
 {
-    // Array of structs to store multiple tracks (weekly/mini library style)
+    // Weeks 1-4 storage
     Track library[MAX_TRACKS];
-    int trackCount = 0; // how many slots are currently filled with valid tracks
+    int trackCount = 0;
+
+    // Week 5 storage
+    TrackManager manager(2);
 
     showBanner();
 
-    // 3+ mixed user inputs: string (spaces), int, double
+    // 3+ mixed inputs: string (spaces), int, double (legacy)
     string djName = getNonEmptyLine("Enter your DJ name: ");
     int targetBPM = getValidatedInt("Enter target BPM for your set (60-200): ", BPM_MIN, BPM_MAX);
     double prepHours = getValidatedDouble("How many hours can you prep today (0.0 - 12.0)? ", 0.0, 12.0);
@@ -141,6 +418,7 @@ int main()
         // switch menu (rubric requirement)
         switch (choice)
         {
+            // ---------------- Weeks 1-4 menu ----------------
         case 1:
             addTrack(library, trackCount);
             break;
@@ -153,40 +431,104 @@ int main()
         case 4:
             saveReportToFile(library, trackCount, "DJ_Set_Report.txt");
             break;
+
+            // ---------------- Week 5 menu ----------------
         case 5:
+        {
+            // Add LocalTrack (dynamic allocation required)
+            cout << "\n--- Add Local Track (Week 5) ---\n";
+            string t = getNonEmptyLine("Title: ");
+            int bpm = getValidatedInt("BPM (60-200): ", BPM_MIN, BPM_MAX);
+            EnergyLevel e = getEnergyFromUser();
+            string path = getNonEmptyLine("File path (ex: track.wav): ");
+            string noteText = getNonEmptyLine("Notes (mix notes): ");
+
+            manager.add(new LocalTrack(t, bpm, e, path, MixNotes(noteText)));
+            cout << "Local track added (Week 5).\n";
+            break;
+        }
+        case 6:
+        {
+            // Add StreamTrack (dynamic allocation required)
+            cout << "\n--- Add Stream Track (Week 5) ---\n";
+            string t = getNonEmptyLine("Title: ");
+            int bpm = getValidatedInt("BPM (60-200): ", BPM_MIN, BPM_MAX);
+            EnergyLevel e = getEnergyFromUser();
+            string platform = getNonEmptyLine("Platform (ex: Spotify): ");
+            string noteText = getNonEmptyLine("Notes (mix notes): ");
+
+            manager.add(new StreamTrack(t, bpm, e, platform, MixNotes(noteText)));
+            cout << "Stream track added (Week 5).\n";
+            break;
+        }
+        case 7:
+            cout << "\n==================== WEEK 5 LIBRARY ====================\n";
+            manager.printAll(cout);
+            break;
+        case 8:
+        {
+            cout << "\n--- Remove Week 5 Track ---\n";
+            if (manager.getSize() == 0)
+            {
+                cout << "Nothing to remove.\n";
+                break;
+            }
+
+            manager.printAll(cout);
+            int idx = safeIndexFromUser("Enter index to remove: ", manager.getSize());
+
+            if (manager.removeAt(idx))
+                cout << "Removed item " << idx << ".\n";
+            else
+                cout << "Remove failed.\n";
+
+            break;
+        }
+        case 9:
+            manager.saveReport("DJ_Set_Report_Week5.txt");
+            break;
+
+            // Quit
+        case 10:
             cout << "\nGoodbye, " << djName << "! Keep the crowd moving.\n";
             break;
+
         default:
-            // This should not happen due to validation, but it’s safe to include.
             cout << "Invalid choice.\n";
         }
 
-    } while (choice != 5);
+    } while (choice != 10);
 
     return 0;
 }
 #endif
 
 // -------------------- UI Functions --------------------
-
-// Prints the program intro banner (friendly welcome).
 void showBanner()
 {
     cout << "=============================================\n";
     cout << "        DJ SET ARCHITECT - C++ EDITION       \n";
-    cout << "   Plan smoother transitions and energy flow \n";
+    cout << "   Weeks 1-4 + Week 5 OOP Upgrade Combined   \n";
     cout << "=============================================\n";
 }
 
-// Prints the menu options for the user.
 void showMenu()
 {
     cout << "\n-------------------- MENU --------------------\n";
+    cout << "WEEKS 1-4 (Struct + Array)\n";
     cout << "1) Add a track to library\n";
     cout << "2) View library summary\n";
     cout << "3) Recommend next tracks (BPM/Energy rules)\n";
-    cout << "4) Save report to file\n";
-    cout << "5) Quit\n";
+    cout << "4) Save report to file\n\n";
+
+    cout << "WEEK 5 (Abstract + Polymorphism)\n";
+    cout << "5) Add Local Track (Week 5)\n";
+    cout << "6) Add Stream Track (Week 5)\n";
+    cout << "7) View Week 5 library (polymorphic print)\n";
+    cout << "8) Remove Week 5 track by index\n";
+    cout << "9) Save Week 5 report to file\n\n";
+
+    cout << "10) Quit\n";
     cout << "----------------------------------------------\n";
 }
 
@@ -301,10 +643,8 @@ string energyToString(EnergyLevel e)
     return "High";
 }
 
-// -------------------- Output Helpers (reuse for cout and file) --------------------
-
-// Prints the table header to any output stream (cout or ofstream).
-void printTableHeader(ostream& out)
+// -------------------- Output Helpers (Weeks 1-4) --------------------
+void printLegacyTableHeader(ostream& out)
 {
     out << left
         << setw(TITLE_W) << "Title"
@@ -319,7 +659,6 @@ void printTableHeader(ostream& out)
     out << string(LINE_W, '-') << "\n";
 }
 
-// Prints one Track row to any output stream (cout or ofstream).
 void printTrackRow(ostream& out, const Track& t)
 {
     out << left
@@ -333,9 +672,7 @@ void printTrackRow(ostream& out, const Track& t)
         << "\n";
 }
 
-// -------------------- Main Features --------------------
-
-// Adds a new track into the library array (if space is available).
+// -------------------- Main Features (Weeks 1-4) --------------------
 void addTrack(Track library[], int& count)
 {
     if (count >= MAX_TRACKS)
@@ -361,7 +698,6 @@ void addTrack(Track library[], int& count)
     cout << "Track added!\n";
 }
 
-// Prints the full library in a pretty table and shows derived values.
 void printLibrary(const Track library[], int count)
 {
     if (count == 0)
@@ -370,8 +706,8 @@ void printLibrary(const Track library[], int count)
         return;
     }
 
-    cout << "\n==================== LIBRARY ====================\n";
-    printTableHeader(cout);
+    cout << "\n==================== LIBRARY (Weeks 1-4) ====================\n";
+    printLegacyTableHeader(cout);
 
     for (int i = 0; i < count; i++)
         printTrackRow(cout, library[i]);
@@ -386,7 +722,6 @@ void printLibrary(const Track library[], int count)
     cout << "Tracks in genre \"" << checkGenre << "\": " << matches << "\n";
 }
 
-// Recommends tracks that are close in BPM and keep energy steady/rising.
 void recommendNextTracks(const Track library[], int count)
 {
     if (count == 0)
@@ -425,7 +760,6 @@ void recommendNextTracks(const Track library[], int count)
         cout << "No close matches found. Try adding more tracks.\n";
 }
 
-// Saves the formatted library report to a file.
 void saveReportToFile(const Track library[], int count, const string& filename)
 {
     ofstream fout(filename.c_str());
@@ -435,7 +769,7 @@ void saveReportToFile(const Track library[], int count, const string& filename)
         return;
     }
 
-    fout << "==================== DJ SET ARCHITECT REPORT ====================\n";
+    fout << "==================== DJ SET ARCHITECT REPORT (Weeks 1-4) ====================\n";
     fout << "Tracks stored: " << count << "\n\n";
 
     if (count == 0)
@@ -446,12 +780,10 @@ void saveReportToFile(const Track library[], int count, const string& filename)
         return;
     }
 
-    // Reuse the same formatting functions for file output
-    printTableHeader(fout);
+    printLegacyTableHeader(fout);
     for (int i = 0; i < count; i++)
         printTrackRow(fout, library[i]);
 
-    // Save derived value (average BPM)
     double avg = computeAverageBPM(library, count);
     fout << "\nAverage BPM: " << fixed << setprecision(1) << avg << "\n";
 
@@ -459,9 +791,7 @@ void saveReportToFile(const Track library[], int count, const string& filename)
     cout << "Report saved to " << filename << "\n";
 }
 
-// -------------------- Calculations / Derived Values --------------------
-
-// Computes the average BPM of stored tracks.
+// -------------------- Calculations / Derived Values (Weeks 1-4) --------------------
 double computeAverageBPM(const Track library[], int count)
 {
     if (count == 0) return 0.0;
@@ -473,7 +803,6 @@ double computeAverageBPM(const Track library[], int count)
     return static_cast<double>(sum) / static_cast<double>(count);
 }
 
-// Counts how many tracks match a specific genre (exact match).
 int countGenreMatches(const Track library[], int count, const string& genre)
 {
     int matches = 0;
@@ -485,154 +814,36 @@ int countGenreMatches(const Track library[], int count, const string& genre)
     return matches;
 }
 
-class DJLibrary
+// -------------------- Week 5 Helper Output --------------------
+void printWeek5TableHeader(ostream& out)
 {
-private:
-    Track tracks[MAX_TRACKS];
-    int count;
+    out << left
+        << "Idx "
+        << setw(TITLE_W) << "Title"
+        << setw(TYPE_W) << "Type"
+        << right << setw(6) << "BPM" << "  "
+        << left << setw(8) << "Energy"
+        << setw(NOTE_W) << "Notes"
+        << "  Source\n";
 
-public:
-    DJLibrary() : count(0) {}
+    printSeparator(out);
+}
 
-    int getTrackCount() const { return count; }
-
-    bool addTrackDirect(const Track& t)
-    {
-        // keep it simple: just prevent overflow
-        if (count >= MAX_TRACKS) return false;
-        tracks[count] = t;
-        count++;
-        return true;
-    }
-};
-
-class MixNotes
+void printSeparator(ostream& out)
 {
-private:
-    string notes;
+    out << string(LINE_W, '-') << "\n";
+}
 
-public:
-    MixNotes() : notes("") {}
-    MixNotes(const string& n) : notes(n) {}
-
-    void setNotes(const string& n) { notes = n; }
-    string getNotes() const { return notes; }
-
-    // helper method (required)
-    bool hasNotes() const
-    {
-        return !notes.empty();
-    }
-};
-
-class TrackBase
+int safeIndexFromUser(const string& prompt, int size)
 {
-protected:
-    string title;          // protected for derived access
+    if (size <= 0) return -1;
+    return getValidatedInt(prompt, 0, size - 1);
+}
 
-private:
-    int bpm;
-    EnergyLevel energy;
-
-public:
-    TrackBase() : title(""), bpm(0), energy(MEDIUM) {}
-
-    TrackBase(const string& t, int b, EnergyLevel e)
-        : title(t), bpm(b), energy(e) {
-    }
-
-    // getters/setters
-    string getTitle() const { return title; }
-    int getBpm() const { return bpm; }
-    EnergyLevel getEnergy() const { return energy; }
-
-    void setTitle(const string& t) { title = t; }
-    void setBpm(int b) { bpm = b; }
-    void setEnergy(EnergyLevel e) { energy = e; }
-
-    virtual void print(ostream& out) const
-    {
-        out << "Title: " << title << "\n";
-        out << "BPM: " << bpm << "\n";
-        out << "Energy: " << energyToString(energy) << "\n";
-    }
-
-    virtual ~TrackBase() {}
-};
-
-class LocalTrack : public TrackBase
-{
-private:
-    string filePath;   // new data member
-    MixNotes notes;    // composition
-
-public:
-    LocalTrack() : TrackBase(), filePath(""), notes() {}
-
-    LocalTrack(const string& t, int b, EnergyLevel e,
-        const string& path, const MixNotes& n)
-        : TrackBase(t, b, e), filePath(path), notes(n) {
-    }
-
-    void setFilePath(const string& p) { filePath = p; }
-    string getFilePath() const { return filePath; }
-
-    void setNotes(const MixNotes& n) { notes = n; }
-    MixNotes getNotes() const { return notes; }
-
-    void print(ostream& out) const override
-    {
-        TrackBase::print(out); // call base
-        out << "File Path: " << filePath << "\n";
-
-        if (notes.hasNotes())
-            out << "Notes: " << notes.getNotes() << "\n";
-        else
-            out << "Notes: (none)\n";
-    }
-};
-
-class StreamTrack : public TrackBase
-{
-private:
-    string platform;   // new data member
-    MixNotes notes;    // composition
-
-public:
-    StreamTrack() : TrackBase(), platform(""), notes() {}
-
-    StreamTrack(const string& t, int b, EnergyLevel e,
-        const string& plat, const MixNotes& n)
-        : TrackBase(t, b, e), platform(plat), notes(n) {
-    }
-
-    void setPlatform(const string& p) { platform = p; }
-    string getPlatform() const { return platform; }
-
-    void setNotes(const MixNotes& n) { notes = n; }
-    MixNotes getNotes() const { return notes; }
-
-    void print(ostream& out) const override
-    {
-        TrackBase::print(out); // call base
-        out << "Platform: " << platform << "\n";
-
-        if (notes.hasNotes())
-            out << "Notes: " << notes.getNotes() << "\n";
-        else
-            out << "Notes: (none)\n";
-    }
-};
-
-
-
-
-
-
-
+// -------------------- Doctest Unit Tests --------------------
 #ifdef _DEBUG
 
-// Quick helper to make tracks easy in tests
+// Quick helper to make tracks easy in tests (Weeks 1-4)
 Track makeTrack(const string& title, const string& genre, int bpm, EnergyLevel e)
 {
     Track t;
@@ -647,7 +858,6 @@ Track makeTrack(const string& title, const string& genre, int bpm, EnergyLevel e
 }
 
 // -------------------- A) Calculations (4 tests) --------------------
-
 TEST_CASE("Average BPM: 0 tracks returns 0.0")
 {
     Track lib[1];
@@ -679,24 +889,14 @@ TEST_CASE("Average BPM: 3 tracks")
 }
 
 // -------------------- B) Enum decision logic (3 tests) --------------------
-
-TEST_CASE("Energy enum: LOW prints 'Low'")
+TEST_CASE("Energy enum prints correct strings")
 {
     CHECK(energyToString(LOW) == "Low");
-}
-
-TEST_CASE("Energy enum: MEDIUM prints 'Medium'")
-{
     CHECK(energyToString(MEDIUM) == "Medium");
-}
-
-TEST_CASE("Energy enum: HIGH prints 'High'")
-{
     CHECK(energyToString(HIGH) == "High");
 }
 
 // -------------------- C) Struct/array processing (3 tests) --------------------
-
 TEST_CASE("Genre matches: 0 matches")
 {
     Track lib[2];
@@ -726,68 +926,66 @@ TEST_CASE("Genre matches: all matches")
     CHECK(countGenreMatches(lib, 3, "House") == 3);
 }
 
-// -------------------- D) Class methods (2 tests) --------------------
-
-TEST_CASE("DJLibrary: addTrackDirect increases count")
+// -------------------- D) Week 5: Base behavior via derived --------------------
+TEST_CASE("TrackBase is abstract: test base behavior via derived")
 {
-    DJLibrary dj;
-    CHECK(dj.getTrackCount() == 0);
-
-    Track t = makeTrack("A", "House", 120, MEDIUM);
-    CHECK(dj.addTrackDirect(t) == true);
-    CHECK(dj.getTrackCount() == 1);
-}
-
-TEST_CASE("DJLibrary: cannot exceed MAX_TRACKS")
-{
-    DJLibrary dj;
-
-    Track t = makeTrack("A", "House", 120, MEDIUM);
-    for (int i = 0; i < MAX_TRACKS; i++)
-        CHECK(dj.addTrackDirect(t) == true);
-
-    CHECK(dj.getTrackCount() == MAX_TRACKS);
-    CHECK(dj.addTrackDirect(t) == false); // overflow guard
-}
-
-
-TEST_CASE("MixNotes helper works")
-{
-    MixNotes n1;
-    MixNotes n2("Good transition");
-
-    CHECK(n1.hasNotes() == false);
-    CHECK(n2.hasNotes() == true);
-}
-
-TEST_CASE("Base constructor initializes fields")
-{
-    TrackBase t("Test", 128, HIGH);
+    LocalTrack t("Test", 128, HIGH, "x.wav", MixNotes("n"));
     CHECK(t.getTitle() == "Test");
     CHECK(t.getBpm() == 128);
     CHECK(t.getEnergy() == HIGH);
+    CHECK(t.getType() == "LocalTrack");
 }
 
-TEST_CASE("LocalTrack prints base + derived")
+// -------------------- E) Week 5: polymorphism --------------------
+TEST_CASE("Polymorphism: base pointer calls derived override (StreamTrack)")
 {
-    MixNotes n("Drop after break");
-    LocalTrack t("Local", 124, MEDIUM, "track.wav", n);
+    TrackBase* p = new StreamTrack("S", 140, HIGH, "Apple Music", MixNotes("hi"));
+    CHECK(p->getType() == "StreamTrack");
 
     ostringstream oss;
-    t.print(oss);
+    p->print(oss);
     string out = oss.str();
 
-    CHECK(out.find("Title: Local") != string::npos);
-    CHECK(out.find("BPM: 124") != string::npos);
-    CHECK(out.find("File Path: track.wav") != string::npos);
+    CHECK(out.find("StreamTrack") != string::npos);
+    CHECK(out.find("Apple Music") != string::npos);
+
+    delete p; // virtual destructor ensures correct cleanup
 }
 
-TEST_CASE("StreamTrack stores platform correctly")
+// -------------------- F) Week 5: Manager add/remove --------------------
+TEST_CASE("Manager: add increases size and resizes")
 {
-    MixNotes n;
-    StreamTrack s("Stream", 130, HIGH, "Spotify", n);
-    CHECK(s.getPlatform() == "Spotify");
+    TrackManager m(2);
+    CHECK(m.getSize() == 0);
+    CHECK(m.getCapacity() == 2);
+
+    m.add(new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes("note")));
+    m.add(new StreamTrack("B", 125, HIGH, "Spotify", MixNotes("")));
+    CHECK(m.getSize() == 2);
+    CHECK(m.getCapacity() == 2);
+
+    // triggers resize
+    m.add(new LocalTrack("C", 130, HIGH, "c.wav", MixNotes("x")));
+    CHECK(m.getSize() == 3);
+    CHECK(m.getCapacity() >= 3);
 }
 
+TEST_CASE("Manager: remove deletes and shifts")
+{
+    TrackManager m(2);
+    m.add(new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes("note")));
+    m.add(new StreamTrack("B", 125, HIGH, "Spotify", MixNotes("")));
+    m.add(new LocalTrack("C", 130, HIGH, "c.wav", MixNotes("x")));
+
+    CHECK(m.getSize() == 3);
+    CHECK(m.removeAt(1) == true);
+    CHECK(m.getSize() == 2);
+
+    ostringstream oss;
+    m.printAll(oss);
+    string out = oss.str();
+    CHECK(out.find("Idx") != string::npos);
+    CHECK(out.find("LocalTrack") != string::npos);
+}
 
 #endif
