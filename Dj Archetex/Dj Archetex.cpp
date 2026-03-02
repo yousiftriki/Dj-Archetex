@@ -20,7 +20,7 @@ Week 06 Upgrade (Ch. 13 focus: Operator Overloading + Templates):
 - Operator overloading:
   * operator== for at least one derived class (meaningful identity match)
   * operator<< outputs one-line summary and uses polymorphism via virtual toStream()
-  * TrackManager operator[] with bounds checking (no exceptions)
+  * TrackManager operator[] with bounds checking (no exceptions) [Week 06 version]
   * TrackManager operator+= / operator-= to add/remove items
   * Explicit use of this pointer
 - Templates:
@@ -29,6 +29,14 @@ Week 06 Upgrade (Ch. 13 focus: Operator Overloading + Templates):
 - Doctests updated for:
   * == tests, << tests, [] tests, +=/-= tests, template function tests, class template tests
 
+Week 07 Upgrade (Ch. 14 focus: Exception Handling):
+- Requirements:
+  * TrackManager operator[] must THROW on invalid index (negative or >= size)
+  * TrackManager operator-= must THROW on invalid removal index
+  * Template class DynamicArray must also THROW on invalid access/removal
+  * At least one custom exception class derived from std::runtime_error used meaningfully
+  * Update doctests for the new throwing behavior
+  * Show CRT leak check output (Visual Studio / MSVC)
 
 Concepts used (rubric):
 - Constants (no magic numbers), enum, struct, array, classes
@@ -40,7 +48,17 @@ Concepts used (rubric):
 - File output with ofstream
 - Inheritance, composition, virtual functions, abstract classes
 - Dynamic memory with new/delete
+- Operator overloading + templates (Ch 13)
+- Exception handling + custom exception (Ch 14)
 */
+
+#ifdef _MSC_VER
+// -------------------- Week 07: CRT Leak Checking (MSVC) --------------------
+// This makes Visual Studio print memory leak info when the program exits.
+// In your Week 07 video, show the Output window result of this.
+#define _CRTDBG_MAP_ALLOC
+#include <crtdbg.h>
+#endif
 
 #ifdef _DEBUG
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
@@ -53,6 +71,8 @@ Concepts used (rubric):
 #include <string>
 #include <limits>
 #include <sstream>
+#include <stdexcept>   // runtime_error, out_of_range
+#include <exception>
 
 using namespace std;
 
@@ -125,7 +145,7 @@ int countGenreMatches(const Track library[], int count, const string& genre);
 void printLegacyTableHeader(ostream& out);
 void printTrackRow(ostream& out, const Track& t);
 
-// -------------------- Week 5/6 Helpers --------------------
+// -------------------- Week 5/6/7 Helpers --------------------
 int safeIndexFromUser(const string& prompt, int size);
 void printWeek5TableHeader(ostream& out);
 void printSeparator(ostream& out);
@@ -141,7 +161,27 @@ T absValue(T x)
     return (x < static_cast<T>(0)) ? -x : x;
 }
 
+// -------------------- Week 07: Custom Exception --------------------
+// REQUIREMENT: At least one custom exception class.
+// We derive from std::runtime_error, store a message, and return it with what().
+class DJException : public std::runtime_error
+{
+public:
+    DJException(const std::string& msg)
+        : std::runtime_error(msg) {}
+};
 
+#ifdef _MSC_VER
+// Enable leak-check-at-exit automatically (useful for doctest runs too).
+struct CrtLeakGuard
+{
+    CrtLeakGuard()
+    {
+        _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    }
+};
+static CrtLeakGuard g_crtLeakGuard;
+#endif
 
 // -------------------- Week 5: Composition Helper Class --------------------
 // MixNotes is a small helper class used inside derived classes (composition).
@@ -157,24 +197,14 @@ public:
     void setNotes(const string& n) { notes = n; }
     string getNotes() const { return notes; }
 
-    // helper method (required)
     bool hasNotes() const
     {
         return !notes.empty();
     }
 };
 
-
 // -------------------- Week 06: Class Template (replaces Week 05 dynamic array logic) --------------------
-// REQUIREMENT: Create a class template that replaces the Week 05 dynamic array logic.
-//
-// This template stores items of ANY type T using a dynamic array:
-// - tracks size + capacity
-// - resizes as needed
-// - supports pushBack and removeAt (shift close gap)
-//
-// NOTE: This template does NOT delete pointed-to objects.
-// Ownership and deletion logic belongs to TrackManager (because it "owns" the TrackBase* objects).
+// Week 07 change: now THROWS on invalid access/removal (Chapter 14 requirement).
 template <class T>
 class DynamicArray
 {
@@ -187,7 +217,6 @@ private:
     {
         T* newItems = new T[newCap];
 
-        // Copy old elements
         for (int i = 0; i < size; i++)
             newItems[i] = items[i];
 
@@ -196,7 +225,6 @@ private:
         capacity = newCap;
     }
 
-    // Prevent copying to avoid double-free of internal array
     DynamicArray(const DynamicArray&) = delete;
     DynamicArray& operator=(const DynamicArray&) = delete;
 
@@ -220,35 +248,30 @@ public:
         size++;
     }
 
-    // Removes an item by index and shifts everything left.
-    // NOTE: This does NOT delete object memory if T is a pointer type.
-    bool removeAt(int index)
+    // Week 07 requirement: invalid removal -> throw
+    void removeAt(int index)
     {
         if (index < 0 || index >= size)
-            return false;
+            throw out_of_range("DynamicArray::removeAt invalid index");
 
         for (int i = index; i < size - 1; i++)
             items[i] = items[i + 1];
 
         size--;
 
-        // Optional shrink: keep it simple and safe
         if (size > 0 && size <= capacity / 4 && capacity > 2)
             resize(capacity / 2);
-
-        return true;
     }
 
-    // Safe access: returns default T() if invalid (no exceptions; matches course constraints).
+    // Week 07 requirement: invalid indexing -> throw
     T at(int index) const
     {
         if (index < 0 || index >= size)
-            return T(); // for pointers => nullptr, for int => 0, etc.
+            throw out_of_range("DynamicArray::at invalid index");
         return items[index];
     }
 
-    // Provide direct access for internal use (still be careful).
-    // (We keep it minimal; manager does bounds checks for public operator[].)
+    // Non-throwing internal access used only when caller guarantees validity.
     T& rawAt(int index) { return items[index]; }
     const T& rawAt(int index) const { return items[index]; }
 
@@ -258,12 +281,12 @@ public:
     }
 };
 
-// -------------------- Week 5/6: Abstract Base Class --------------------
-// TrackBase is now an ABSTRACT base class.
+// -------------------- Week 5/6/7: Abstract Base Class --------------------
+// TrackBase is an ABSTRACT base class.
 class TrackBase
 {
 protected:
-    string title;  // required protected for derived access
+    string title;  // protected for derived access
 
 private:
     int bpm;
@@ -276,7 +299,6 @@ public:
         : title(t), bpm(b), energy(e) {
     }
 
-    // getters/setters
     string getTitle() const { return title; }
     int getBpm() const { return bpm; }
     EnergyLevel getEnergy() const { return energy; }
@@ -285,7 +307,6 @@ public:
     void setBpm(int b) { bpm = b; }
     void setEnergy(EnergyLevel e) { energy = e; }
 
-    // Week 5: print stays, but must be virtual (polymorphism)
     virtual void print(ostream& out) const
     {
         out << left
@@ -295,33 +316,25 @@ public:
             << left << setw(8) << energyToString(energy);
     }
 
-    // Week 6: virtual function used by operator<< (polymorphic one-line summary)
-   // REQUIREMENT: << should call a virtual function so correct derived behavior runs.
+    // Week 06: used by operator<< (polymorphic one-line)
     virtual void toStream(ostream& out) const
     {
-        // One-line summary base portion (common fields)
         out << getType() << " | " << title << " | " << bpm << " BPM | " << energyToString(energy);
     }
 
-
-    // Week 5: PURE VIRTUAL FUNCTION (makes class abstract)
     virtual string getType() const = 0;
 
-    // Week 5: virtual destructor (critical for deleting via base pointer)
     virtual ~TrackBase() {}
 };
 
 // -------------------- Week 06: operator<< overload (polymorphic) --------------------
-// REQUIREMENT: Overload operator<< for base or derived.
-// It must output a clean one-line summary.
-// Must use polymorphism: << calls virtual toStream().
 ostream& operator<<(ostream& out, const TrackBase& t)
 {
     t.toStream(out);  // virtual call => derived override runs
     return out;
 }
 
-// -------------------- Week 5/6: Derived Class #1 --------------------
+// -------------------- Week 5/6/7: Derived Class #1 --------------------
 class LocalTrack : public TrackBase
 {
 private:
@@ -347,15 +360,13 @@ public:
     void print(ostream& out) const override
     {
         TrackBase::print(out);
-        out << setw(KEY_W) << "" // spacer
+        out << setw(KEY_W) << ""
             << setw(NOTE_W) << (notes.hasNotes() ? notes.getNotes().substr(0, NOTE_W - 1) : "(none)")
             << "  Path: " << filePath;
     }
 
-    // Week 06: override toStream for polymorphic operator<< output
     void toStream(ostream& out) const override
     {
-        // Build from base meaning + add derived details
         out << getType()
             << " | " << title
             << " | " << getBpm() << " BPM"
@@ -363,18 +374,15 @@ public:
             << " | Path=" << filePath;
     }
 
-    // Week 06: operator== for at least one derived class
-    // REQUIREMENT: "Two objects compare equal when meaningful identity fields match."
-    //
-    // Identity choice for LocalTrack:
-    // - title and filePath uniquely identify a local file track in this program.
+    // Week 06 requirement: operator== for at least one derived class
+    // Identity choice: title + filePath uniquely identify local track in this program.
     bool operator==(const LocalTrack& other) const
     {
         return (this->title == other.title) && (this->filePath == other.filePath);
     }
 };
 
-// -------------------- Week 5/6: Derived Class #2 --------------------
+// -------------------- Week 5/6/7: Derived Class #2 --------------------
 class StreamTrack : public TrackBase
 {
 private:
@@ -400,12 +408,11 @@ public:
     void print(ostream& out) const override
     {
         TrackBase::print(out);
-        out << setw(KEY_W) << "" // spacer
+        out << setw(KEY_W) << ""
             << setw(NOTE_W) << (notes.hasNotes() ? notes.getNotes().substr(0, NOTE_W - 1) : "(none)")
             << "  Platform: " << platform;
     }
 
-    // Week 06: override toStream for polymorphic operator<< output
     void toStream(ostream& out) const override
     {
         out << getType()
@@ -416,15 +423,13 @@ public:
     }
 };
 
-// -------------------- Week 5/6: Manager Class --------------------
-// TrackManager OWNS TrackBase* objects and uses a class template for storage.
-// Week 06 change: Replace TrackBase** + manual resize with DynamicArray<TrackBase*>.
+// -------------------- Week 5/6/7: Manager Class --------------------
+// TrackManager OWNS TrackBase* objects and uses DynamicArray<TrackBase*> for storage.
 class TrackManager
 {
 private:
     DynamicArray<TrackBase*> items; // template-based dynamic container
 
-    // Prevent copying to avoid double-free of owned TrackBase* objects
     TrackManager(const TrackManager&) = delete;
     TrackManager& operator=(const TrackManager&) = delete;
 
@@ -444,38 +449,40 @@ public:
     }
 
     // Removes by index (deletes object, shifts close the gap)
-    bool removeAt(int index)
+    // Internal helper. We keep it throwing to match Week 07 behavior.
+    void removeAt(int index)
     {
-        if (index < 0 || index >= items.getSize())
-            return false;
-
-        // delete owned object
+        // If invalid, DynamicArray::at throws out_of_range.
         TrackBase* doomed = items.at(index);
         delete doomed;
-
-        // remove pointer slot and shift
-        return items.removeAt(index);
+        items.removeAt(index);
     }
 
-    // Week 06: operator[] with bounds checking (no exceptions)
-    // REQUIREMENT: If invalid index, handle safely and do not throw.
-    // Rule: return nullptr if invalid.
+    // Week 07 requirement: operator[] must THROW on invalid index.
+    // Also: we use our CUSTOM exception here (DJException) to satisfy the rubric.
     TrackBase* operator[](int index) const
     {
-        return items.at(index); // at() returns default (nullptr) if invalid
+        if (index < 0 || index >= items.getSize())
+            throw DJException("TrackManager::operator[] invalid index");
+
+        // Valid index, safe to access:
+        return items.at(index);  // will not throw here because we checked
     }
 
     // Week 06: operator+= adds item pointer to container
     TrackManager& operator+=(TrackBase* p)
     {
-        // REQUIREMENT: explicitly use this pointer at least once
+        // explicit use of this pointer (Week 06 requirement)
         this->add(p);
         return *this;
     }
 
-    // Week 06: operator-= removes item by index
+    // Week 07 requirement: operator-= must THROW on invalid removal.
     TrackManager& operator-=(int index)
     {
+        if (index < 0 || index >= items.getSize())
+            throw DJException("TrackManager::operator-= invalid removal index");
+
         this->removeAt(index);
         return *this;
     }
@@ -493,9 +500,9 @@ public:
         for (int i = 0; i < items.getSize(); i++)
         {
             out << setw(4) << i << " ";
-            TrackBase* p = items.at(i);
+            TrackBase* p = items.rawAt(i); // valid i, so rawAt is safe (no exception)
             if (p)
-                p->print(out); // polymorphic print
+                p->print(out);
             out << "\n";
         }
 
@@ -511,7 +518,7 @@ public:
             return;
         }
 
-        fout << "==================== DJ SET ARCHITECT REPORT (Week 6) ====================\n";
+        fout << "==================== DJ SET ARCHITECT REPORT (Week 7) ====================\n";
         fout << "Tracks stored: " << items.getSize() << "\n\n";
 
         printAll(fout);
@@ -525,7 +532,7 @@ public:
         // delete all owned objects
         for (int i = 0; i < items.getSize(); i++)
         {
-            TrackBase* p = items.at(i);
+            TrackBase* p = items.rawAt(i);
             delete p;
         }
         // DynamicArray destructor cleans up its internal array
@@ -536,11 +543,16 @@ public:
 #ifndef _DEBUG
 int main()
 {
+#ifdef _MSC_VER
+    // Ensure leak-check is enabled (also enabled via CrtLeakGuard above).
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
+
     // Weeks 1-4 storage
     Track library[MAX_TRACKS];
     int trackCount = 0;
 
-    // Week 5/6 storage
+    // Week 5/6/7 storage
     TrackManager manager(2);
 
     showBanner();
@@ -574,17 +586,14 @@ int main()
         if (i == 3) cout << "  3) Increase energy gradually.\n";
     }
 
-    // do-while loop (rubric requirement): keep showing menu until user quits
     int choice = 0;
     do
     {
         showMenu();
         choice = getMenuChoice(MENU_MIN, MENU_MAX);
 
-        // switch menu (rubric requirement)
         switch (choice)
         {
-            // ---------------- Weeks 1-4 menu ----------------
         case 1:
             addTrack(library, trackCount);
             break;
@@ -598,48 +607,53 @@ int main()
             saveReportToFile(library, trackCount, "DJ_Set_Report.txt");
             break;
 
-            // ---------------- Week 5/6 menu ----------------
         case 5:
         {
-            // Add LocalTrack (dynamic allocation required)
-            cout << "\n--- Add Local Track (Week 6) ---\n";
+            cout << "\n--- Add Local Track (Week 7) ---\n";
             string t = getNonEmptyLine("Title: ");
             int bpm = getValidatedInt("BPM (60-200): ", BPM_MIN, BPM_MAX);
             EnergyLevel e = getEnergyFromUser();
             string path = getNonEmptyLine("File path (ex: track.wav): ");
             string noteText = getNonEmptyLine("Notes (mix notes): ");
 
-            // Week 06 operator+= usage (adds and takes ownership)
             manager += new LocalTrack(t, bpm, e, path, MixNotes(noteText));
-            cout << "Local track added (Week 6).\n";
+            cout << "Local track added (Week 7).\n";
             break;
         }
         case 6:
         {
-            // Add StreamTrack (dynamic allocation required)
-            cout << "\n--- Add Stream Track (Week 6) ---\n";
+            cout << "\n--- Add Stream Track (Week 7) ---\n";
             string t = getNonEmptyLine("Title: ");
             int bpm = getValidatedInt("BPM (60-200): ", BPM_MIN, BPM_MAX);
             EnergyLevel e = getEnergyFromUser();
             string platform = getNonEmptyLine("Platform (ex: Spotify): ");
             string noteText = getNonEmptyLine("Notes (mix notes): ");
 
-            // Week 06 operator+= usage
             manager += new StreamTrack(t, bpm, e, platform, MixNotes(noteText));
-            cout << "Stream track added (Week 6).\n";
+            cout << "Stream track added (Week 7).\n";
             break;
         }
         case 7:
-            cout << "\n==================== WEEK 6 LIBRARY ====================\n";
+            cout << "\n==================== WEEK 7 LIBRARY ====================\n";
             manager.printAll(cout);
 
-            // Show operator<< output quickly (polymorphic one-line)
-            if (manager.getSize() > 0 && manager[0] != nullptr)
-                cout << "One-line summary (operator<<): " << *manager[0] << "\n";
+            // operator[] now throws if invalid, so we only do it if size > 0
+            if (manager.getSize() > 0)
+            {
+                try
+                {
+                    cout << "One-line summary (operator<<): " << *manager[0] << "\n";
+                }
+                catch (const exception& ex)
+                {
+                    cout << "Unexpected error: " << ex.what() << "\n";
+                }
+            }
             break;
+
         case 8:
         {
-            cout << "\n--- Remove Week 6 Track ---\n";
+            cout << "\n--- Remove Week 7 Track ---\n";
             if (manager.getSize() == 0)
             {
                 cout << "Nothing to remove.\n";
@@ -649,16 +663,23 @@ int main()
             manager.printAll(cout);
             int idx = safeIndexFromUser("Enter index to remove: ", manager.getSize());
 
-            // Week 06 operator-= usage (removes safely)
-            manager -= idx;
-            cout << "Remove attempted at index " << idx << ".\n";
+            // operator-= now throws if invalid removal
+            try
+            {
+                manager -= idx;
+                cout << "Removed item " << idx << ".\n";
+            }
+            catch (const exception& ex)
+            {
+                cout << "Remove failed: " << ex.what() << "\n";
+            }
+
             break;
         }
         case 9:
-            manager.saveReport("DJ_Set_Report_Week6.txt");
+            manager.saveReport("DJ_Set_Report_Week7.txt");
             break;
 
-            // Quit
         case 10:
             cout << "\nGoodbye, " << djName << "! Keep the crowd moving.\n";
             break;
@@ -678,7 +699,7 @@ void showBanner()
 {
     cout << "=============================================\n";
     cout << "        DJ SET ARCHITECT - C++ EDITION       \n";
-    cout << "   Weeks 1-4 + Week 5 OOP Upgrade Combined   \n";
+    cout << "   Weeks 1-4 + Week 5/6/7 Upgrade Combined   \n";
     cout << "=============================================\n";
 }
 
@@ -691,18 +712,17 @@ void showMenu()
     cout << "3) Recommend next tracks (BPM/Energy rules)\n";
     cout << "4) Save report to file\n\n";
 
-    cout << "WEEK 5 (Abstract + Polymorphism)\n";
-    cout << "5) Add Local Track (Week 5)\n";
-    cout << "6) Add Stream Track (Week 5)\n";
-    cout << "7) View Week 5 library (polymorphic print)\n";
-    cout << "8) Remove Week 5 track by index\n";
-    cout << "9) Save Week 5 report to file\n\n";
+    cout << "WEEK 5+ (Abstract + Polymorphism + Operators + Templates + Exceptions)\n";
+    cout << "5) Add Local Track\n";
+    cout << "6) Add Stream Track\n";
+    cout << "7) View library\n";
+    cout << "8) Remove track by index\n";
+    cout << "9) Save report to file\n\n";
 
     cout << "10) Quit\n";
     cout << "----------------------------------------------\n";
 }
 
-// Validates menu input using a while loop and stream error handling.
 int getMenuChoice(int minChoice, int maxChoice)
 {
     int choice;
@@ -710,14 +730,12 @@ int getMenuChoice(int minChoice, int maxChoice)
     {
         cout << "Enter choice (" << minChoice << "-" << maxChoice << "): ";
 
-        // Accept only an integer in range
         if (cin >> choice && choice >= minChoice && choice <= maxChoice)
         {
-            cin.ignore(numeric_limits<streamsize>::max(), '\n'); // clear newline
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
             return choice;
         }
 
-        // Handle invalid input
         cout << "Invalid menu choice. Try again.\n";
         cin.clear();
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
@@ -725,8 +743,6 @@ int getMenuChoice(int minChoice, int maxChoice)
 }
 
 // -------------------- Input Helpers --------------------
-
-// Gets a non-empty full line of text (supports spaces).
 string getNonEmptyLine(const string& prompt)
 {
     string value;
@@ -743,7 +759,6 @@ string getNonEmptyLine(const string& prompt)
     return value;
 }
 
-// Gets a valid integer between minVal and maxVal.
 int getValidatedInt(const string& prompt, int minVal, int maxVal)
 {
     int value;
@@ -763,7 +778,6 @@ int getValidatedInt(const string& prompt, int minVal, int maxVal)
     }
 }
 
-// Gets a valid double between minVal and maxVal.
 double getValidatedDouble(const string& prompt, double minVal, double maxVal)
 {
     double value;
@@ -784,9 +798,6 @@ double getValidatedDouble(const string& prompt, double minVal, double maxVal)
 }
 
 // -------------------- Enum Helpers --------------------
-
-// Prompts user for energy choice and converts it into the enum.
-// Uses a switch decision structure (rubric requirement).
 EnergyLevel getEnergyFromUser()
 {
     cout << "Energy Level:\n";
@@ -805,7 +816,6 @@ EnergyLevel getEnergyFromUser()
     }
 }
 
-// Converts an EnergyLevel into a printable string.
 string energyToString(EnergyLevel e)
 {
     if (e == LOW) return "Low";
@@ -862,8 +872,8 @@ void addTrack(Track library[], int& count)
     t.energy = getEnergyFromUser();
     t.notes = getNonEmptyLine("Notes (mix notes): ");
 
-    library[count] = t; // store struct into array
-    count++;            // update how many tracks are stored
+    library[count] = t;
+    count++;
 
     cout << "Track added!\n";
 }
@@ -882,11 +892,9 @@ void printLibrary(const Track library[], int count)
     for (int i = 0; i < count; i++)
         printTrackRow(cout, library[i]);
 
-    // Derived value: average BPM
     double avg = computeAverageBPM(library, count);
     cout << "\nAverage BPM: " << fixed << setprecision(1) << avg << "\n";
 
-    // Derived value: genre count
     string checkGenre = getNonEmptyLine("Enter a genre to count matches: ");
     int matches = countGenreMatches(library, count, checkGenre);
     cout << "Tracks in genre \"" << checkGenre << "\": " << matches << "\n";
@@ -904,7 +912,7 @@ void recommendNextTracks(const Track library[], int count)
     int currentBPM = getValidatedInt("Current BPM you are playing (60-200): ", BPM_MIN, BPM_MAX);
     EnergyLevel currentEnergy = getEnergyFromUser();
 
-    const int BPM_RANGE = 5; // recommend within +/- 5 BPM
+    const int BPM_RANGE = 5;
     bool found = false;
 
     cout << "\nSuggested tracks (within +/-" << BPM_RANGE
@@ -912,10 +920,8 @@ void recommendNextTracks(const Track library[], int count)
 
     for (int i = 0; i < count; i++)
     {
-        // Week 06 template usage: absValue<int>
         int bpmDiff = absValue(library[i].bpm - currentBPM);
 
-        // Compound boolean condition: bpm close AND energy same or +1 step
         if (bpmDiff <= BPM_RANGE &&
             (library[i].energy == currentEnergy || library[i].energy == currentEnergy + 1))
         {
@@ -983,7 +989,7 @@ int countGenreMatches(const Track library[], int count, const string& genre)
     return matches;
 }
 
-// -------------------- Week 5/6 Helper Output --------------------
+// -------------------- Week 5/6/7 Helper Output --------------------
 void printWeek5TableHeader(ostream& out)
 {
     out << left
@@ -1012,7 +1018,6 @@ int safeIndexFromUser(const string& prompt, int size)
 // -------------------- Doctest Unit Tests --------------------
 #ifdef _DEBUG
 
-// Quick helper to make tracks easy in tests (Weeks 1-4)
 Track makeTrack(const string& title, const string& genre, int bpm, EnergyLevel e)
 {
     Track t;
@@ -1114,52 +1119,14 @@ TEST_CASE("Polymorphism: base pointer calls derived override (StreamTrack)")
     CHECK(out.find("StreamTrack") != string::npos);
     CHECK(out.find("Apple Music") != string::npos);
 
-    delete p; // virtual destructor ensures correct cleanup
+    delete p;
 }
 
-TEST_CASE("Manager: add increases size and resizes")
-{
-    TrackManager m(2);
-    CHECK(m.getSize() == 0);
-    CHECK(m.getCapacity() == 2);
-
-    m.add(new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes("note")));
-    m.add(new StreamTrack("B", 125, HIGH, "Spotify", MixNotes("")));
-    CHECK(m.getSize() == 2);
-    CHECK(m.getCapacity() == 2);
-
-    // triggers resize
-    m.add(new LocalTrack("C", 130, HIGH, "c.wav", MixNotes("x")));
-    CHECK(m.getSize() == 3);
-    CHECK(m.getCapacity() >= 3);
-}
-
-TEST_CASE("Manager: remove deletes and shifts")
-{
-    TrackManager m(2);
-    m.add(new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes("note")));
-    m.add(new StreamTrack("B", 125, HIGH, "Spotify", MixNotes("")));
-    m.add(new LocalTrack("C", 130, HIGH, "c.wav", MixNotes("x")));
-
-    CHECK(m.getSize() == 3);
-    CHECK(m.removeAt(1) == true);
-    CHECK(m.getSize() == 2);
-
-    ostringstream oss;
-    m.printAll(oss);
-    string out = oss.str();
-    CHECK(out.find("Idx") != string::npos);
-    CHECK(out.find("LocalTrack") != string::npos);
-}
-
-// -------------------- Week 06 NEW doctests (required) --------------------
-
-// 1) Equality operator == (at least 2 tests)
+// -------------------- Week 06 tests (still valid) --------------------
 TEST_CASE("operator==: equal LocalTrack objects")
 {
     LocalTrack a("Song", 128, HIGH, "song.wav", MixNotes("x"));
     LocalTrack b("Song", 100, LOW, "song.wav", MixNotes("different notes"));
-    // identity = title + filePath, so these should be equal
     CHECK(a == b);
 }
 
@@ -1170,7 +1137,6 @@ TEST_CASE("operator==: not equal LocalTrack objects")
     CHECK((a == b) == false);
 }
 
-// 2) operator<< output (at least 2 tests)
 TEST_CASE("operator<<: outputs derived LocalTrack one-line summary")
 {
     LocalTrack t("LocalName", 124, MEDIUM, "track.wav", MixNotes("n"));
@@ -1193,8 +1159,10 @@ TEST_CASE("operator<<: outputs derived StreamTrack one-line summary")
     CHECK(s.find("Platform=Spotify") != string::npos);
 }
 
-// 3) operator[] indexing (at least 2 tests)
-TEST_CASE("operator[]: valid index returns correct item pointer")
+// -------------------- Week 07 doctest updates (THROWS) --------------------
+
+// TrackManager operator[]: valid index returns correct pointer
+TEST_CASE("Week07 operator[]: valid index returns correct item pointer")
 {
     TrackManager m(2);
     m += new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes(""));
@@ -1205,15 +1173,17 @@ TEST_CASE("operator[]: valid index returns correct item pointer")
     CHECK(p->getTitle() == "A");
 }
 
-TEST_CASE("operator[]: invalid index returns nullptr")
+// TrackManager operator[]: invalid index throws
+TEST_CASE("Week07 operator[]: invalid index throws")
 {
     TrackManager m(2);
     m += new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes(""));
-    CHECK(m[99] == nullptr);
-    CHECK(m[-1] == nullptr);
+
+    CHECK_THROWS(m[99]);
+    CHECK_THROWS(m[-1]);
 }
 
-// 4) += / -= add/remove (at least 2 tests)
+// operator+= add increases size / stores correct pointer
 TEST_CASE("operator+= add increases size and stores correct pointer")
 {
     TrackManager m(2);
@@ -1225,7 +1195,8 @@ TEST_CASE("operator+= add increases size and stores correct pointer")
     CHECK(m[0]->getType() == "StreamTrack");
 }
 
-TEST_CASE("operator-= remove deletes and shifts properly")
+// operator-= valid removal deletes and shifts
+TEST_CASE("Week07 operator-= valid removal shifts properly")
 {
     TrackManager m(2);
     m += new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes(""));
@@ -1234,18 +1205,23 @@ TEST_CASE("operator-= remove deletes and shifts properly")
 
     CHECK(m.getSize() == 3);
 
-    // remove middle (index 1), should shift "C" into index 1
-    m -= 1;
+    m -= 1; // remove middle; should shift "C" to index 1
     CHECK(m.getSize() == 2);
 
-    CHECK(m[0] != nullptr);
     CHECK(m[0]->getTitle() == "A");
-
-    CHECK(m[1] != nullptr);
     CHECK(m[1]->getTitle() == "C");
 }
 
-// 5) Template usage: at least 2 tests (function template)
+// operator-= invalid removal throws
+TEST_CASE("Week07 operator-= invalid removal throws")
+{
+    TrackManager m(2);
+    m += new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes(""));
+    CHECK_THROWS(m -= 5);
+    CHECK_THROWS(m -= -1);
+}
+
+// Function template tests
 TEST_CASE("Function template absValue works for int")
 {
     CHECK(absValue(-10) == 10);
@@ -1258,8 +1234,8 @@ TEST_CASE("Function template absValue works for double")
     CHECK(absValue(3.25) == doctest::Approx(3.25));
 }
 
-// 6) Class template usage: at least 2 tests
-TEST_CASE("Class template DynamicArray works for int (store/remove/resizing)")
+// DynamicArray now throws on invalid access/removal (Week07)
+TEST_CASE("Week07 DynamicArray<int>: store/remove/resizing still works")
 {
     DynamicArray<int> a(2);
     CHECK(a.getSize() == 0);
@@ -1267,10 +1243,7 @@ TEST_CASE("Class template DynamicArray works for int (store/remove/resizing)")
 
     a.pushBack(10);
     a.pushBack(20);
-    CHECK(a.getSize() == 2);
-
-    // triggers resize
-    a.pushBack(30);
+    a.pushBack(30); // resize
     CHECK(a.getSize() == 3);
     CHECK(a.getCapacity() >= 3);
 
@@ -1278,13 +1251,24 @@ TEST_CASE("Class template DynamicArray works for int (store/remove/resizing)")
     CHECK(a.at(1) == 20);
     CHECK(a.at(2) == 30);
 
-    CHECK(a.removeAt(1) == true);
+    a.removeAt(1);
     CHECK(a.getSize() == 2);
     CHECK(a.at(0) == 10);
     CHECK(a.at(1) == 30);
 }
 
-TEST_CASE("Class template DynamicArray works for TrackBase* (store and safe at)")
+TEST_CASE("Week07 DynamicArray throws on invalid access/removal")
+{
+    DynamicArray<int> a(2);
+    a.pushBack(1);
+
+    CHECK_THROWS(a.at(5));
+    CHECK_THROWS(a.at(-1));
+    CHECK_THROWS(a.removeAt(2));
+    CHECK_THROWS(a.removeAt(-1));
+}
+
+TEST_CASE("Week07 DynamicArray<TrackBase*> basic works and throws on invalid")
 {
     DynamicArray<TrackBase*> a(2);
     TrackBase* p1 = new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes(""));
@@ -1294,12 +1278,12 @@ TEST_CASE("Class template DynamicArray works for TrackBase* (store and safe at)"
     a.pushBack(p2);
 
     CHECK(a.getSize() == 2);
-    CHECK(a.at(0) != nullptr);
-    CHECK(a.at(1) != nullptr);
     CHECK(a.at(0)->getType() == "LocalTrack");
-    CHECK(a.at(99) == nullptr);
+    CHECK(a.at(1)->getType() == "StreamTrack");
+    CHECK_THROWS(a.at(99));
+    CHECK_THROWS(a.removeAt(99));
 
-    // Clean up: template doesn't delete owned objects
+    // Clean up (template does not own pointed-to objects)
     delete p1;
     delete p2;
 }
