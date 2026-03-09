@@ -137,7 +137,7 @@ void printLibrary(const Track library[], int count);
 void recommendNextTracks(const Track library[], int count);
 void saveReportToFile(const Track library[], int count, const string& filename);
 
-// Derived values / calculations
+// Derived values / calculationsdat
 double computeAverageBPM(const Track library[], int count);
 int countGenreMatches(const Track library[], int count, const string& genre);
 
@@ -430,6 +430,20 @@ class TrackManager
 private:
     DynamicArray<TrackBase*> items; // template-based dynamic container
 
+    int countHighEnergyRecursiveHelper(int index) const
+    {
+        // Base case: reached end of array
+        if (index >= items.getSize())
+            return 0;
+
+        // Recursive case: count current item if HIGH, then move to next
+        int currentIsHigh = 0;
+        if (items.rawAt(index) != nullptr && items.rawAt(index)->getEnergy() == HIGH)
+            currentIsHigh = 1;
+
+        return currentIsHigh + countHighEnergyRecursiveHelper(index + 1);
+    }
+
     TrackManager(const TrackManager&) = delete;
     TrackManager& operator=(const TrackManager&) = delete;
 
@@ -441,6 +455,11 @@ public:
 
     int getSize() const { return items.getSize(); }
     int getCapacity() const { return items.getCapacity(); }
+
+    int countHighEnergyRecursive() const
+    {
+        return countHighEnergyRecursiveHelper(0);
+    }
 
     // Adds a pointer (manager takes ownership)
     void add(TrackBase* p)
@@ -636,6 +655,9 @@ int main()
         case 7:
             cout << "\n==================== WEEK 7 LIBRARY ====================\n";
             manager.printAll(cout);
+            // NEW Week 08 recursive feature
+            cout << "High-energy tracks (recursive): "
+                << manager.countHighEnergyRecursive() << "\n";
 
             // operator[] now throws if invalid, so we only do it if size > 0
             if (manager.getSize() > 0)
@@ -1286,6 +1308,34 @@ TEST_CASE("Week07 DynamicArray<TrackBase*> basic works and throws on invalid")
     // Clean up (template does not own pointed-to objects)
     delete p1;
     delete p2;
+}
+
+// Week 08 tests
+
+TEST_CASE("Week08 recursive countHighEnergyRecursive: counts HIGH tracks correctly")
+{
+    TrackManager m(2);
+    m += new LocalTrack("A", 120, LOW, "a.wav", MixNotes(""));
+    m += new StreamTrack("B", 125, HIGH, "Spotify", MixNotes(""));
+    m += new LocalTrack("C", 130, HIGH, "c.wav", MixNotes(""));
+    m += new StreamTrack("D", 128, MEDIUM, "Apple Music", MixNotes(""));
+
+    CHECK(m.countHighEnergyRecursive() == 2);
+}
+
+TEST_CASE("Week08 recursive countHighEnergyRecursive: no HIGH tracks returns 0")
+{
+    TrackManager m(2);
+    m += new LocalTrack("A", 120, LOW, "a.wav", MixNotes(""));
+    m += new StreamTrack("B", 125, MEDIUM, "Spotify", MixNotes(""));
+
+    CHECK(m.countHighEnergyRecursive() == 0);
+}
+
+TEST_CASE("Week08 recursive countHighEnergyRecursive: empty manager returns 0")
+{
+    TrackManager m(2);
+    CHECK(m.countHighEnergyRecursive() == 0);
 }
 
 #endif
