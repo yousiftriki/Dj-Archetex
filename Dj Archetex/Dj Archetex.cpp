@@ -38,6 +38,21 @@ Week 07 Upgrade (Ch. 14 focus: Exception Handling):
   * Update doctests for the new throwing behavior
   * Show CRT leak check output (Visual Studio / MSVC)
 
+Week 09 Upgrade (Ch. 16 focus: Searching, Sorting, and the Vector Type):
+- std::vector<int> bpmList added to TrackManager (replaces what would be a raw int array)
+  * Uses .push_back(), .size(), .at() -- no raw array for this portion
+  * Kept in sync with items: pushed on add(), erased on removeAt()
+- Sequential (Linear) Search: sequentialSearchBpm()
+  * Searches element-by-element from index 0; returns index or -1 if not found
+  * No std::find or library search helpers used
+- Bubble Sort: sortBpmsBubble()
+  * Manually implemented; compares adjacent pairs and swaps until sorted ascending
+  * No std::sort used
+- Binary Search: binarySearchBpm()
+  * Classic low/mid/high approach; requires sortBpmsBubble() called first
+  * Returns index or -1; no std::binary_search used
+- Doctests updated for all new functions including edge cases (empty vector, not found)
+
 Concepts used (rubric):
 - Constants (no magic numbers), enum, struct, array, classes
 - Input validation (cin fail states, clear/ignore)
@@ -73,6 +88,7 @@ Concepts used (rubric):
 #include <sstream>
 #include <stdexcept>   // runtime_error, out_of_range
 #include <exception>
+#include <vector>      // Week 09: std::vector used in TrackManager for BPM search/sort
 
 using namespace std;
 
@@ -95,9 +111,9 @@ const int TYPE_W = 12;
 const int BPM_MIN = 60;
 const int BPM_MAX = 200;
 
-// Menu range (merged menu: original + week5)
+// Menu range (merged menu: original + week5 + week9)
 const int MENU_MIN = 1;
-const int MENU_MAX = 10;
+const int MENU_MAX = 12; // Week 09: expanded to 12 (added BPM search/sort options)
 
 // -------------------- Enum --------------------
 // EnergyLevel models how intense a track feels in a set (meaningful for DJ planning).
@@ -423,12 +439,18 @@ public:
     }
 };
 
-// -------------------- Week 5/6/7: Manager Class --------------------
+// -------------------- Week 5/6/7/9: Manager Class --------------------
 // TrackManager OWNS TrackBase* objects and uses DynamicArray<TrackBase*> for storage.
 class TrackManager
 {
 private:
     DynamicArray<TrackBase*> items; // template-based dynamic container
+
+    // -------------------- Week 09: std::vector replaces raw int array --------------------
+    // bpmList stores the BPM of every track in the same order as items[].
+    // It replaces what would have been a plain int array (e.g. int bpms[N]).
+    // All access goes through .push_back(), .size(), and .at() per the rubric.
+    vector<int> bpmList;
 
     int countHighEnergyRecursiveHelper(int index) const
     {
@@ -465,6 +487,7 @@ public:
     void add(TrackBase* p)
     {
         items.pushBack(p);
+        bpmList.push_back(p->getBpm()); // Week 09: mirror BPM into vector for search/sort
     }
 
     // Removes by index (deletes object, shifts close the gap)
@@ -475,6 +498,7 @@ public:
         TrackBase* doomed = items.at(index);
         delete doomed;
         items.removeAt(index);
+        bpmList.erase(bpmList.begin() + index); // Week 09: keep vector in sync with items
     }
 
     // Week 07 requirement: operator[] must THROW on invalid index.
@@ -545,6 +569,73 @@ public:
         fout.close();
         cout << "Report saved to " << filename << "\n";
     }
+
+    // -------------------- Week 09: Sequential (Linear) Search --------------------
+    // Scans bpmList element-by-element from the start.
+    // Returns the index of the first match, or -1 if the target BPM is not found.
+    // No std::find or any library search is used — the loop does all the work.
+    int sequentialSearchBpm(int target) const
+    {
+        for (int i = 0; i < static_cast<int>(bpmList.size()); i++)
+        {
+            if (bpmList.at(i) == target)
+                return i; // found at this index
+        }
+        return -1; // not found
+    }
+
+    // -------------------- Week 09: Bubble Sort --------------------
+    // Sorts bpmList in ascending order using the Bubble Sort algorithm.
+    // Each outer pass "bubbles" the largest unsorted value to its final position.
+    // No std::sort — every swap is done manually.
+    void sortBpmsBubble()
+    {
+        int n = static_cast<int>(bpmList.size());
+        for (int i = 0; i < n - 1; i++)
+        {
+            for (int j = 0; j < n - i - 1; j++)
+            {
+                if (bpmList.at(j) > bpmList.at(j + 1))
+                {
+                    // swap adjacent elements
+                    int temp = bpmList.at(j);
+                    bpmList.at(j) = bpmList.at(j + 1);
+                    bpmList.at(j + 1) = temp;
+                }
+            }
+        }
+    }
+
+    // -------------------- Week 09: Binary Search --------------------
+    // IMPORTANT: sortBpmsBubble() must be called before this function.
+    // Binary search requires the data to be in sorted order; without it the
+    // mid-point comparison sends the search in the wrong direction.
+    // Uses the classic low / mid / high index approach.
+    // Returns the index of the found element, or -1 if not found.
+    int binarySearchBpm(int target) const
+    {
+        int low  = 0;
+        int high = static_cast<int>(bpmList.size()) - 1;
+
+        while (low <= high)
+        {
+            int mid = low + (high - low) / 2; // avoids integer overflow vs (low+high)/2
+
+            if (bpmList.at(mid) == target)
+                return mid;                   // exact match found
+            else if (bpmList.at(mid) < target)
+                low = mid + 1;                // target is in right half
+            else
+                high = mid - 1;              // target is in left half
+        }
+        return -1; // not found
+    }
+
+    // Week 09 helper: returns how many BPMs are stored in the vector
+    int getBpmCount() const { return static_cast<int>(bpmList.size()); }
+
+    // Week 09 helper: returns BPM value at position i (uses .at() for bounds check)
+    int getBpmAt(int i) const { return bpmList.at(i); }
 
     ~TrackManager()
     {
@@ -702,7 +793,51 @@ int main()
             manager.saveReport("DJ_Set_Report_Week7.txt");
             break;
 
+        // -------------------- Week 09: Sequential Search --------------------
         case 10:
+        {
+            if (manager.getBpmCount() == 0)
+            {
+                cout << "No tracks in Week 09 library yet. Add some first (options 5 or 6).\n";
+                break;
+            }
+            int target = getValidatedInt("Enter BPM to search for (60-200): ", BPM_MIN, BPM_MAX);
+            int idx = manager.sequentialSearchBpm(target);
+            if (idx == -1)
+                cout << "BPM " << target << " not found (sequential search).\n";
+            else
+                cout << "BPM " << target << " found at index " << idx
+                     << " (sequential search): " << *manager[idx] << "\n";
+            break;
+        }
+
+        // -------------------- Week 09: Bubble Sort + Binary Search --------------------
+        case 11:
+        {
+            if (manager.getBpmCount() == 0)
+            {
+                cout << "No tracks in Week 09 library yet. Add some first (options 5 or 6).\n";
+                break;
+            }
+            // Sort must come before binary search
+            manager.sortBpmsBubble();
+            cout << "BPM list sorted (bubble sort).\n";
+
+            cout << "Sorted BPMs: ";
+            for (int i = 0; i < manager.getBpmCount(); i++)
+                cout << manager.getBpmAt(i) << " ";
+            cout << "\n";
+
+            int target = getValidatedInt("Enter BPM to binary search for (60-200): ", BPM_MIN, BPM_MAX);
+            int idx = manager.binarySearchBpm(target);
+            if (idx == -1)
+                cout << "BPM " << target << " not found (binary search).\n";
+            else
+                cout << "BPM " << target << " found at sorted index " << idx << ".\n";
+            break;
+        }
+
+        case 12:
             cout << "\nGoodbye, " << djName << "! Keep the crowd moving.\n";
             break;
 
@@ -710,7 +845,7 @@ int main()
             cout << "Invalid choice.\n";
         }
 
-    } while (choice != 10);
+    } while (choice != 12);
 
     return 0;
 }
@@ -721,7 +856,7 @@ void showBanner()
 {
     cout << "=============================================\n";
     cout << "        DJ SET ARCHITECT - C++ EDITION       \n";
-    cout << "   Weeks 1-4 + Week 5/6/7 Upgrade Combined   \n";
+    cout << " Weeks 1-4 + Weeks 5/6/7/09 Upgrade Combined \n"; // Week 09: updated banner
     cout << "=============================================\n";
 }
 
@@ -741,7 +876,11 @@ void showMenu()
     cout << "8) Remove track by index\n";
     cout << "9) Save report to file\n\n";
 
-    cout << "10) Quit\n";
+    cout << "WEEK 09 (Vector + Search + Sort)\n";
+    cout << "10) Sequential search BPM in library\n";
+    cout << "11) Sort library BPMs then binary search\n\n";
+
+    cout << "12) Quit\n";
     cout << "----------------------------------------------\n";
 }
 
@@ -1336,6 +1475,67 @@ TEST_CASE("Week08 recursive countHighEnergyRecursive: empty manager returns 0")
 {
     TrackManager m(2);
     CHECK(m.countHighEnergyRecursive() == 0);
+}
+
+// ==================== Week 09 Tests: vector, sequential search, sort, binary search ====================
+
+// Test 1: vector .push_back() grows bpmList; .at() retrieves correct values
+TEST_CASE("Week09 vector: push_back stores BPMs and .at() retrieves them")
+{
+    TrackManager m(2);
+    CHECK(m.getBpmCount() == 0); // empty vector (edge case)
+
+    m += new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes(""));
+    m += new StreamTrack("B", 135, HIGH, "Spotify", MixNotes(""));
+
+    CHECK(m.getBpmCount() == 2);    // .size() via getBpmCount()
+    CHECK(m.getBpmAt(0) == 120);    // .at(0)
+    CHECK(m.getBpmAt(1) == 135);    // .at(1)
+}
+
+// Test 2: sequential search — found returns index; not found or empty returns -1
+TEST_CASE("Week09 sequentialSearchBpm: found returns index, not found or empty returns -1")
+{
+    TrackManager empty(2);
+    CHECK(empty.sequentialSearchBpm(128) == -1); // edge case: empty vector
+
+    TrackManager m(2);
+    m += new LocalTrack("A", 120, MEDIUM, "a.wav", MixNotes(""));
+    m += new StreamTrack("B", 135, HIGH, "Spotify", MixNotes(""));
+
+    CHECK(m.sequentialSearchBpm(135) == 1);  // found
+    CHECK(m.sequentialSearchBpm(999) == -1); // not found
+}
+
+// Test 3: bubble sort — out-of-order BPMs sorted ascending
+TEST_CASE("Week09 sortBpmsBubble: sorts BPM values into ascending order")
+{
+    TrackManager m(2);
+    m += new LocalTrack("A", 150, HIGH, "a.wav", MixNotes(""));
+    m += new StreamTrack("B", 120, MEDIUM, "Spotify", MixNotes(""));
+    m += new LocalTrack("C", 135, HIGH, "c.wav", MixNotes(""));
+
+    m.sortBpmsBubble();
+
+    CHECK(m.getBpmAt(0) == 120);
+    CHECK(m.getBpmAt(1) == 135);
+    CHECK(m.getBpmAt(2) == 150);
+}
+
+// Test 4: binary search — requires sort first; finds element or returns -1
+TEST_CASE("Week09 binarySearchBpm: finds element after sort; returns -1 if not found or empty")
+{
+    TrackManager empty(2);
+    CHECK(empty.binarySearchBpm(128) == -1); // edge case: empty vector
+
+    TrackManager m(2);
+    m += new LocalTrack("A", 150, HIGH, "a.wav", MixNotes(""));
+    m += new StreamTrack("B", 120, MEDIUM, "Spotify", MixNotes(""));
+    m += new LocalTrack("C", 135, HIGH, "c.wav", MixNotes(""));
+
+    m.sortBpmsBubble(); // must sort before binary search — [120, 135, 150]
+    CHECK(m.binarySearchBpm(135) == 1);  // found at index 1
+    CHECK(m.binarySearchBpm(999) == -1); // not found
 }
 
 #endif

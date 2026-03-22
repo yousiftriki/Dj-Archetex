@@ -29,9 +29,9 @@
     </TypeIdentifier>
   </Class>
   <Class Name="TrackManager" Collapsed="true">
-    <Position X="1.75" Y="1.5" Width="1.5" />
+    <Position X="1.75" Y="1.5" Width="2.5" />
     <TypeIdentifier>
-      <HashCode>AAAAAAAAAIAECAAAKAgAAQAAAAMAAAAAACAgAAACEAE=</HashCode>
+      <HashCode>AAAAQAAgAIAECGAAKAgAAQAAAAMAAAAAACAgEAACEAE=</HashCode>
       <FileName>Dj Archetex.cpp</FileName>
     </TypeIdentifier>
   </Class>
