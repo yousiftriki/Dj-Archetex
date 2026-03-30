@@ -53,6 +53,18 @@ Week 09 Upgrade (Ch. 16 focus: Searching, Sorting, and the Vector Type):
   * Returns index or -1; no std::binary_search used
 - Doctests updated for all new functions including edge cases (empty vector, not found)
 
+Week 10 Upgrade (Ch. 17 focus: Linked Lists):
+- Replaced TrackManager BPM helper storage with a custom linked list ADT (no std::list)
+- Added node structure (BpmNode) with data + next pointer
+- Added linked list iterator class (BpmListIterator) for traversal
+- Linked list operations implemented as member functions:
+  * Insert (insertFront, insertBack)
+  * Delete (removeFirstMatch, removeAtPosition helper)
+  * Search (search)
+  * Print/Traverse (print using iterator)
+- Linked list type chosen: UNORDERED
+  * Why: simple insertion behavior and clear demonstration of front/back insert positions
+
 Concepts used (rubric):
 - Constants (no magic numbers), enum, struct, array, classes
 - Input validation (cin fail states, clear/ignore)
@@ -88,7 +100,7 @@ Concepts used (rubric):
 #include <sstream>
 #include <stdexcept>   // runtime_error, out_of_range
 #include <exception>
-#include <vector>      // Week 09: std::vector used in TrackManager for BPM search/sort
+#include <vector>      // Week 09 include kept for minimal change history
 
 using namespace std;
 
@@ -439,18 +451,244 @@ public:
     }
 };
 
-// -------------------- Week 5/6/7/9: Manager Class --------------------
+// -------------------- Week 10: Linked List Node --------------------
+// Node stores one BPM value and a pointer to the next node.
+struct BpmNode
+{
+    int data;
+    BpmNode* next;
+
+    BpmNode(int d) : data(d), next(nullptr) {}
+};
+
+// -------------------- Week 10: Linked List Iterator --------------------
+// Supports:
+// 1) initialization to front, 2) advancing, 3) reading current data.
+class BpmListIterator
+{
+private:
+    BpmNode* current;
+
+public:
+    BpmListIterator(BpmNode* start = nullptr) : current(start) {}
+
+    bool isValid() const { return current != nullptr; }
+
+    void next()
+    {
+        if (current != nullptr)
+            current = current->next;
+    }
+
+    int data() const
+    {
+        if (current == nullptr)
+            throw out_of_range("BpmListIterator::data invalid current node");
+        return current->data;
+    }
+};
+
+// -------------------- Week 10: Unordered Linked List ADT --------------------
+// Why unordered?
+// - We can demonstrate at least two insertion positions (front and back)
+//   in a simple way without enforcing automatic sorted insert behavior.
+class BpmLinkedList
+{
+private:
+    BpmNode* head;
+    BpmNode* tail;
+    int listSize;
+
+    BpmLinkedList(const BpmLinkedList&) = delete;
+    BpmLinkedList& operator=(const BpmLinkedList&) = delete;
+
+public:
+    BpmLinkedList() : head(nullptr), tail(nullptr), listSize(0) {}
+
+    ~BpmLinkedList()
+    {
+        clear();
+    }
+
+    void clear()
+    {
+        BpmNode* cur = head;
+        while (cur != nullptr)
+        {
+            BpmNode* nextNode = cur->next;
+            delete cur;
+            cur = nextNode;
+        }
+        head = nullptr;
+        tail = nullptr;
+        listSize = 0;
+    }
+
+    int getSize() const { return listSize; }
+
+    // Insert position #1: front
+    void insertFront(int value)
+    {
+        BpmNode* n = new BpmNode(value);
+        n->next = head;
+        head = n;
+        if (tail == nullptr)
+            tail = n;
+        listSize++;
+    }
+
+    // Insert position #2: back
+    void insertBack(int value)
+    {
+        BpmNode* n = new BpmNode(value);
+        if (tail == nullptr)
+        {
+            head = n;
+            tail = n;
+        }
+        else
+        {
+            tail->next = n;
+            tail = n;
+        }
+        listSize++;
+    }
+
+    // Delete operation: remove first node matching value.
+    bool removeFirstMatch(int value)
+    {
+        BpmNode* prev = nullptr;
+        BpmNode* cur = head;
+
+        while (cur != nullptr)
+        {
+            if (cur->data == value)
+            {
+                if (prev == nullptr)
+                    head = cur->next;
+                else
+                    prev->next = cur->next;
+
+                if (cur == tail)
+                    tail = prev;
+
+                delete cur;
+                listSize--;
+                return true;
+            }
+
+            prev = cur;
+            cur = cur->next;
+        }
+
+        return false;
+    }
+
+    // Helper used by TrackManager to keep index alignment with items[].
+    bool removeAtPosition(int index)
+    {
+        if (index < 0 || index >= listSize)
+            return false;
+
+        BpmNode* prev = nullptr;
+        BpmNode* cur = head;
+
+        for (int i = 0; i < index; i++)
+        {
+            prev = cur;
+            cur = cur->next;
+        }
+
+        if (prev == nullptr)
+            head = cur->next;
+        else
+            prev->next = cur->next;
+
+        if (cur == tail)
+            tail = prev;
+
+        delete cur;
+        listSize--;
+        return true;
+    }
+
+    // Search operation: sequentially return index of first match or -1.
+    int search(int value) const
+    {
+        int index = 0;
+        BpmNode* cur = head;
+
+        while (cur != nullptr)
+        {
+            if (cur->data == value)
+                return index;
+            cur = cur->next;
+            index++;
+        }
+
+        return -1;
+    }
+
+    // Access node data at index (throws on invalid index).
+    int at(int index) const
+    {
+        if (index < 0 || index >= listSize)
+            throw out_of_range("BpmLinkedList::at invalid index");
+
+        BpmNode* cur = head;
+        for (int i = 0; i < index; i++)
+            cur = cur->next;
+
+        return cur->data;
+    }
+
+    // Set node data at index (throws on invalid index).
+    void setAt(int index, int value)
+    {
+        if (index < 0 || index >= listSize)
+            throw out_of_range("BpmLinkedList::setAt invalid index");
+
+        BpmNode* cur = head;
+        for (int i = 0; i < index; i++)
+            cur = cur->next;
+
+        cur->data = value;
+    }
+
+    BpmListIterator begin() const
+    {
+        return BpmListIterator(head);
+    }
+
+    // Print/Traverse operation (uses iterator per Week 10 requirement).
+    void print(ostream& out) const
+    {
+        BpmListIterator it = begin();
+        if (!it.isValid())
+        {
+            out << "(empty)\n";
+            return;
+        }
+
+        while (it.isValid())
+        {
+            out << it.data() << " ";
+            it.next();
+        }
+        out << "\n";
+    }
+};
+
+// -------------------- Week 5/6/7/9/10: Manager Class --------------------
 // TrackManager OWNS TrackBase* objects and uses DynamicArray<TrackBase*> for storage.
 class TrackManager
 {
 private:
     DynamicArray<TrackBase*> items; // template-based dynamic container
 
-    // -------------------- Week 09: std::vector replaces raw int array --------------------
-    // bpmList stores the BPM of every track in the same order as items[].
-    // It replaces what would have been a plain int array (e.g. int bpms[N]).
-    // All access goes through .push_back(), .size(), and .at() per the rubric.
-    vector<int> bpmList;
+    // -------------------- Week 10: replace BPM helper storage with linked list --------------------
+    // This linked list stays index-aligned with items[].
+    BpmLinkedList bpmList;
 
     int countHighEnergyRecursiveHelper(int index) const
     {
@@ -487,7 +725,7 @@ public:
     void add(TrackBase* p)
     {
         items.pushBack(p);
-        bpmList.push_back(p->getBpm()); // Week 09: mirror BPM into vector for search/sort
+        bpmList.insertBack(p->getBpm()); // Week 10: insert BPM into linked list (back position)
     }
 
     // Removes by index (deletes object, shifts close the gap)
@@ -498,7 +736,7 @@ public:
         TrackBase* doomed = items.at(index);
         delete doomed;
         items.removeAt(index);
-        bpmList.erase(bpmList.begin() + index); // Week 09: keep vector in sync with items
+        bpmList.removeAtPosition(index); // Week 10: keep linked list in sync with items
     }
 
     // Week 07 requirement: operator[] must THROW on invalid index.
@@ -576,12 +814,7 @@ public:
     // No std::find or any library search is used — the loop does all the work.
     int sequentialSearchBpm(int target) const
     {
-        for (int i = 0; i < static_cast<int>(bpmList.size()); i++)
-        {
-            if (bpmList.at(i) == target)
-                return i; // found at this index
-        }
-        return -1; // not found
+        return bpmList.search(target);
     }
 
     // -------------------- Week 09: Bubble Sort --------------------
@@ -590,7 +823,7 @@ public:
     // No std::sort — every swap is done manually.
     void sortBpmsBubble()
     {
-        int n = static_cast<int>(bpmList.size());
+        int n = bpmList.getSize();
         for (int i = 0; i < n - 1; i++)
         {
             for (int j = 0; j < n - i - 1; j++)
@@ -599,8 +832,8 @@ public:
                 {
                     // swap adjacent elements
                     int temp = bpmList.at(j);
-                    bpmList.at(j) = bpmList.at(j + 1);
-                    bpmList.at(j + 1) = temp;
+                    bpmList.setAt(j, bpmList.at(j + 1));
+                    bpmList.setAt(j + 1, temp);
                 }
             }
         }
@@ -615,7 +848,7 @@ public:
     int binarySearchBpm(int target) const
     {
         int low  = 0;
-        int high = static_cast<int>(bpmList.size()) - 1;
+        int high = bpmList.getSize() - 1;
 
         while (low <= high)
         {
@@ -631,11 +864,18 @@ public:
         return -1; // not found
     }
 
-    // Week 09 helper: returns how many BPMs are stored in the vector
-    int getBpmCount() const { return static_cast<int>(bpmList.size()); }
+    // Week 09/10 helper: returns how many BPM values are stored
+    int getBpmCount() const { return bpmList.getSize(); }
 
-    // Week 09 helper: returns BPM value at position i (uses .at() for bounds check)
+    // Week 09/10 helper: returns BPM value at position i
     int getBpmAt(int i) const { return bpmList.at(i); }
+
+    // Week 10 helper: linked list print/traverse in one place
+    void printBpmLinkedList(ostream& out) const
+    {
+        out << "BPM linked list traversal: ";
+        bpmList.print(out); // uses iterator internally
+    }
 
     ~TrackManager()
     {
@@ -749,6 +989,8 @@ int main()
             // NEW Week 08 recursive feature
             cout << "High-energy tracks (recursive): "
                 << manager.countHighEnergyRecursive() << "\n";
+            // Week 10: linked list traversal display (uses iterator)
+            manager.printBpmLinkedList(cout);
 
             // operator[] now throws if invalid, so we only do it if size > 0
             if (manager.getSize() > 0)
@@ -798,7 +1040,7 @@ int main()
         {
             if (manager.getBpmCount() == 0)
             {
-                cout << "No tracks in Week 09 library yet. Add some first (options 5 or 6).\n";
+                cout << "No tracks in Week 09/10 library yet. Add some first (options 5 or 6).\n";
                 break;
             }
             int target = getValidatedInt("Enter BPM to search for (60-200): ", BPM_MIN, BPM_MAX);
@@ -816,17 +1058,13 @@ int main()
         {
             if (manager.getBpmCount() == 0)
             {
-                cout << "No tracks in Week 09 library yet. Add some first (options 5 or 6).\n";
+                cout << "No tracks in Week 09/10 library yet. Add some first (options 5 or 6).\n";
                 break;
             }
             // Sort must come before binary search
             manager.sortBpmsBubble();
             cout << "BPM list sorted (bubble sort).\n";
-
-            cout << "Sorted BPMs: ";
-            for (int i = 0; i < manager.getBpmCount(); i++)
-                cout << manager.getBpmAt(i) << " ";
-            cout << "\n";
+            manager.printBpmLinkedList(cout);
 
             int target = getValidatedInt("Enter BPM to binary search for (60-200): ", BPM_MIN, BPM_MAX);
             int idx = manager.binarySearchBpm(target);
@@ -856,7 +1094,7 @@ void showBanner()
 {
     cout << "=============================================\n";
     cout << "        DJ SET ARCHITECT - C++ EDITION       \n";
-    cout << " Weeks 1-4 + Weeks 5/6/7/09 Upgrade Combined \n"; // Week 09: updated banner
+    cout << "Weeks 1-4 + Weeks 5/6/7/09/10 Upgrade Combined\n"; // Week 10: updated banner
     cout << "=============================================\n";
 }
 
@@ -876,7 +1114,7 @@ void showMenu()
     cout << "8) Remove track by index\n";
     cout << "9) Save report to file\n\n";
 
-    cout << "WEEK 09 (Vector + Search + Sort)\n";
+    cout << "WEEK 09/10 (Search + Sort + Linked List)\n";
     cout << "10) Sequential search BPM in library\n";
     cout << "11) Sort library BPMs then binary search\n\n";
 
@@ -1536,6 +1774,66 @@ TEST_CASE("Week09 binarySearchBpm: finds element after sort; returns -1 if not f
     m.sortBpmsBubble(); // must sort before binary search — [120, 135, 150]
     CHECK(m.binarySearchBpm(135) == 1);  // found at index 1
     CHECK(m.binarySearchBpm(999) == -1); // not found
+}
+
+// ==================== Week 10 Tests: custom linked list + iterator ====================
+
+TEST_CASE("Week10 linked list insert: insert into empty list and use two positions")
+{
+    BpmLinkedList list;
+
+    // Empty -> first insert at front
+    list.insertFront(120);
+    CHECK(list.getSize() == 1);
+    CHECK(list.at(0) == 120);
+
+    // Second insert at back (different insertion position)
+    list.insertBack(130);
+    CHECK(list.getSize() == 2);
+    CHECK(list.at(0) == 120);
+    CHECK(list.at(1) == 130);
+}
+
+TEST_CASE("Week10 linked list delete: deleting non-existent value returns false")
+{
+    BpmLinkedList list;
+    list.insertBack(120);
+    list.insertBack(130);
+
+    CHECK(list.removeFirstMatch(999) == false); // edge case: node does not exist
+    CHECK(list.getSize() == 2);                 // list remains unchanged
+}
+
+TEST_CASE("Week10 linked list search + iterator traversal order")
+{
+    BpmLinkedList list;
+    list.insertBack(100);
+    list.insertBack(110);
+    list.insertBack(120);
+
+    CHECK(list.search(100) == 0);
+    CHECK(list.search(120) == 2);
+    CHECK(list.search(999) == -1);
+
+    // Iterator requirement: front initialization, next(), current data access.
+    BpmListIterator it = list.begin();
+    CHECK(it.isValid());
+    CHECK(it.data() == 100);
+    it.next();
+    CHECK(it.data() == 110);
+    it.next();
+    CHECK(it.data() == 120);
+}
+
+TEST_CASE("Week10 linked list traverse/print empty list")
+{
+    BpmLinkedList list;
+    ostringstream oss;
+    list.print(oss); // edge case: traverse empty linked list
+    CHECK(oss.str() == "(empty)\n");
+
+    BpmListIterator it = list.begin();
+    CHECK(it.isValid() == false);
 }
 
 #endif
