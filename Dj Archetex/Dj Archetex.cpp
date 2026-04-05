@@ -65,6 +65,17 @@ Week 10 Upgrade (Ch. 17 focus: Linked Lists):
 - Linked list type chosen: UNORDERED
   * Why: simple insertion behavior and clear demonstration of front/back insert positions
 
+Week 11 Upgrade (Ch. 18 focus: Stacks and Queues):
+- Added a custom array-based stack class (no std::stack)
+  * Chosen because top push/pop operations stay simple and constant-time
+  * Fixed capacity makes full-stack edge cases easy to test clearly
+- Added a custom circular array queue class (no std::queue)
+  * Chosen because front/back operations stay constant-time without shifting elements
+- Updated TrackManager output to show:
+  * Recent additions in stack (LIFO) order
+  * Playback preview in queue (FIFO) order
+- Added doctests for both ADTs and their integration output
+
 Concepts used (rubric):
 - Constants (no magic numbers), enum, struct, array, classes
 - Input validation (cin fail states, clear/ignore)
@@ -679,6 +690,151 @@ public:
     }
 };
 
+// -------------------- Week 11: Array-Based Stack ADT --------------------
+// Choice: array-based stack
+// Why: push/pop/top are straightforward O(1) operations, and a fixed capacity
+// makes it easy to demonstrate the "full stack" edge case required by the assignment.
+template <class T>
+class ArrayStack
+{
+private:
+    T* items;
+    int capacity;
+    int topIndex;
+
+    ArrayStack(const ArrayStack&) = delete;
+    ArrayStack& operator=(const ArrayStack&) = delete;
+
+public:
+    ArrayStack(int cap = MAX_TRACKS)
+        : items(nullptr), capacity(cap), topIndex(-1)
+    {
+        if (capacity < 1)
+            capacity = 1;
+
+        items = new T[capacity];
+    }
+
+    ~ArrayStack()
+    {
+        delete[] items;
+    }
+
+    bool isEmpty() const
+    {
+        return topIndex < 0;
+    }
+
+    bool isFull() const
+    {
+        return topIndex + 1 >= capacity;
+    }
+
+    int getSize() const
+    {
+        return topIndex + 1;
+    }
+
+    void push(const T& value)
+    {
+        if (isFull())
+            throw DJException("ArrayStack::push full stack");
+
+        topIndex++;
+        items[topIndex] = value;
+    }
+
+    void pop()
+    {
+        if (isEmpty())
+            throw DJException("ArrayStack::pop empty stack");
+
+        topIndex--;
+    }
+
+    T top() const
+    {
+        if (isEmpty())
+            throw DJException("ArrayStack::top empty stack");
+
+        return items[topIndex];
+    }
+};
+
+// -------------------- Week 11: Circular Array Queue ADT --------------------
+// Choice: array-based circular queue
+// Why: enqueue/dequeue/front remain O(1) and the circular indexing avoids shifting.
+template <class T>
+class ArrayQueue
+{
+private:
+    T* items;
+    int capacity;
+    int frontIndex;
+    int backIndex;
+    int count;
+
+    ArrayQueue(const ArrayQueue&) = delete;
+    ArrayQueue& operator=(const ArrayQueue&) = delete;
+
+public:
+    ArrayQueue(int cap = MAX_TRACKS)
+        : items(nullptr), capacity(cap), frontIndex(0), backIndex(0), count(0)
+    {
+        if (capacity < 1)
+            capacity = 1;
+
+        items = new T[capacity];
+    }
+
+    ~ArrayQueue()
+    {
+        delete[] items;
+    }
+
+    bool isEmpty() const
+    {
+        return count == 0;
+    }
+
+    bool isFull() const
+    {
+        return count >= capacity;
+    }
+
+    int getSize() const
+    {
+        return count;
+    }
+
+    void enqueue(const T& value)
+    {
+        if (isFull())
+            throw DJException("ArrayQueue::enqueue full queue");
+
+        items[backIndex] = value;
+        backIndex = (backIndex + 1) % capacity;
+        count++;
+    }
+
+    void dequeue()
+    {
+        if (isEmpty())
+            throw DJException("ArrayQueue::dequeue empty queue");
+
+        frontIndex = (frontIndex + 1) % capacity;
+        count--;
+    }
+
+    T front() const
+    {
+        if (isEmpty())
+            throw DJException("ArrayQueue::front empty queue");
+
+        return items[frontIndex];
+    }
+};
+
 // -------------------- Week 5/6/7/9/10: Manager Class --------------------
 // TrackManager OWNS TrackBase* objects and uses DynamicArray<TrackBase*> for storage.
 class TrackManager
@@ -877,6 +1033,58 @@ public:
         bpmList.print(out); // uses iterator internally
     }
 
+    void printRecentAdditionsStack(ostream& out) const
+    {
+        out << "Recent additions stack (LIFO): ";
+
+        if (items.getSize() == 0)
+        {
+            out << "(empty)\n";
+            return;
+        }
+
+        ArrayStack<string> recentTitles(items.getSize());
+        for (int i = 0; i < items.getSize(); i++)
+            recentTitles.push(items.rawAt(i)->getTitle());
+
+        while (!recentTitles.isEmpty())
+        {
+            out << recentTitles.top();
+            recentTitles.pop();
+
+            if (!recentTitles.isEmpty())
+                out << " -> ";
+        }
+
+        out << "\n";
+    }
+
+    void printPlaybackQueue(ostream& out) const
+    {
+        out << "Playback queue (FIFO): ";
+
+        if (items.getSize() == 0)
+        {
+            out << "(empty)\n";
+            return;
+        }
+
+        ArrayQueue<string> playbackQueue(items.getSize());
+        for (int i = 0; i < items.getSize(); i++)
+            playbackQueue.enqueue(items.rawAt(i)->getTitle());
+
+        while (!playbackQueue.isEmpty())
+        {
+            out << playbackQueue.front();
+            playbackQueue.dequeue();
+
+            if (!playbackQueue.isEmpty())
+                out << " -> ";
+        }
+
+        out << "\n";
+    }
+
     ~TrackManager()
     {
         // delete all owned objects
@@ -991,6 +1199,9 @@ int main()
                 << manager.countHighEnergyRecursive() << "\n";
             // Week 10: linked list traversal display (uses iterator)
             manager.printBpmLinkedList(cout);
+            // Week 11: stack + queue display
+            manager.printRecentAdditionsStack(cout);
+            manager.printPlaybackQueue(cout);
 
             // operator[] now throws if invalid, so we only do it if size > 0
             if (manager.getSize() > 0)
@@ -1094,7 +1305,7 @@ void showBanner()
 {
     cout << "=============================================\n";
     cout << "        DJ SET ARCHITECT - C++ EDITION       \n";
-    cout << "Weeks 1-4 + Weeks 5/6/7/09/10 Upgrade Combined\n"; // Week 10: updated banner
+    cout << "Weeks 1-4 + Weeks 5/6/7/09/10/11 Upgrade Combined\n";
     cout << "=============================================\n";
 }
 
@@ -1114,7 +1325,7 @@ void showMenu()
     cout << "8) Remove track by index\n";
     cout << "9) Save report to file\n\n";
 
-    cout << "WEEK 09/10 (Search + Sort + Linked List)\n";
+    cout << "WEEK 09/10/11 (Search + Sort + Linked List + Stack + Queue)\n";
     cout << "10) Sequential search BPM in library\n";
     cout << "11) Sort library BPMs then binary search\n\n";
 
@@ -1834,6 +2045,131 @@ TEST_CASE("Week10 linked list traverse/print empty list")
 
     BpmListIterator it = list.begin();
     CHECK(it.isValid() == false);
+}
+
+// ==================== Week 11 Tests: stack + queue ====================
+
+TEST_CASE("Week11 ArrayStack push top pop maintains LIFO order")
+{
+    ArrayStack<int> stack(3);
+    CHECK(stack.isEmpty());
+
+    stack.push(10);
+    stack.push(20);
+    stack.push(30);
+
+    CHECK(stack.getSize() == 3);
+    CHECK(stack.top() == 30);
+
+    stack.pop();
+    CHECK(stack.top() == 20);
+
+    stack.pop();
+    CHECK(stack.top() == 10);
+
+    stack.pop();
+    CHECK(stack.isEmpty());
+}
+
+TEST_CASE("Week11 ArrayStack throws on full push and empty pop or top")
+{
+    ArrayStack<int> stack(2);
+    stack.push(1);
+    stack.push(2);
+
+    CHECK_THROWS(stack.push(3));
+
+    stack.pop();
+    stack.pop();
+
+    CHECK_THROWS(stack.pop());
+    CHECK_THROWS(stack.top());
+}
+
+TEST_CASE("Week11 ArrayQueue enqueue front dequeue maintains FIFO order")
+{
+    ArrayQueue<string> queue(3);
+    CHECK(queue.isEmpty());
+
+    queue.enqueue("A");
+    queue.enqueue("B");
+    queue.enqueue("C");
+
+    CHECK(queue.getSize() == 3);
+    CHECK(queue.front() == "A");
+
+    queue.dequeue();
+    CHECK(queue.front() == "B");
+
+    queue.dequeue();
+    CHECK(queue.front() == "C");
+
+    queue.dequeue();
+    CHECK(queue.isEmpty());
+}
+
+TEST_CASE("Week11 ArrayQueue throws on full enqueue and empty dequeue or front")
+{
+    ArrayQueue<int> queue(2);
+    queue.enqueue(100);
+    queue.enqueue(200);
+
+    CHECK_THROWS(queue.enqueue(300));
+
+    queue.dequeue();
+    queue.dequeue();
+
+    CHECK_THROWS(queue.dequeue());
+    CHECK_THROWS(queue.front());
+}
+
+TEST_CASE("Week11 ArrayQueue handles circular wraparound correctly")
+{
+    ArrayQueue<int> queue(3);
+    queue.enqueue(1);
+    queue.enqueue(2);
+    queue.enqueue(3);
+
+    queue.dequeue();
+    queue.dequeue();
+
+    queue.enqueue(4);
+    queue.enqueue(5);
+
+    CHECK(queue.front() == 3);
+    queue.dequeue();
+    CHECK(queue.front() == 4);
+    queue.dequeue();
+    CHECK(queue.front() == 5);
+}
+
+TEST_CASE("Week11 TrackManager prints stack and queue views using existing tracks")
+{
+    TrackManager m(2);
+    m += new LocalTrack("Alpha", 120, MEDIUM, "a.wav", MixNotes(""));
+    m += new StreamTrack("Bravo", 125, HIGH, "Spotify", MixNotes(""));
+    m += new LocalTrack("Charlie", 130, HIGH, "c.wav", MixNotes(""));
+
+    ostringstream stackOut;
+    m.printRecentAdditionsStack(stackOut);
+    CHECK(stackOut.str() == "Recent additions stack (LIFO): Charlie -> Bravo -> Alpha\n");
+
+    ostringstream queueOut;
+    m.printPlaybackQueue(queueOut);
+    CHECK(queueOut.str() == "Playback queue (FIFO): Alpha -> Bravo -> Charlie\n");
+}
+
+TEST_CASE("Week11 TrackManager prints empty stack and queue views")
+{
+    TrackManager m(2);
+
+    ostringstream stackOut;
+    m.printRecentAdditionsStack(stackOut);
+    CHECK(stackOut.str() == "Recent additions stack (LIFO): (empty)\n");
+
+    ostringstream queueOut;
+    m.printPlaybackQueue(queueOut);
+    CHECK(queueOut.str() == "Playback queue (FIFO): (empty)\n");
 }
 
 #endif
