@@ -76,6 +76,12 @@ Week 11 Upgrade (Ch. 18 focus: Stacks and Queues):
   * Playback preview in queue (FIFO) order
 - Added doctests for both ADTs and their integration output
 
+Week 12 Upgrade (STL Maps focus):
+- Added std::map<string, int> titleIndex to TrackManager
+  * Maps track title keys to their current TrackManager array index
+  * Supports insert on add, lookup by title, delete on remove, and iteration display
+  * Enhances title lookup/removal without scanning the whole dynamic array
+
 Concepts used (rubric):
 - Constants (no magic numbers), enum, struct, array, classes
 - Input validation (cin fail states, clear/ignore)
@@ -112,6 +118,7 @@ Concepts used (rubric):
 #include <stdexcept>   // runtime_error, out_of_range
 #include <exception>
 #include <vector>      // Week 09 include kept for minimal change history
+#include <map>         // Week 12: std::map title lookup index
 
 using namespace std;
 
@@ -136,7 +143,7 @@ const int BPM_MAX = 200;
 
 // Menu range (merged menu: original + week5 + week9)
 const int MENU_MIN = 1;
-const int MENU_MAX = 12; // Week 09: expanded to 12 (added BPM search/sort options)
+const int MENU_MAX = 14; // Week 12: expanded for std::map title lookup/removal
 
 // -------------------- Enum --------------------
 // EnergyLevel models how intense a track feels in a set (meaningful for DJ planning).
@@ -846,6 +853,25 @@ private:
     // This linked list stays index-aligned with items[].
     BpmLinkedList bpmList;
 
+    // -------------------- Week 12: STL map title lookup index --------------------
+    // std::map is used here instead of repeatedly scanning DynamicArray because a
+    // title is a meaningful key and map::find gives direct key-based lookup.
+    // The DynamicArray still owns the TrackBase objects; this map stores only
+    // each title key and the current array index for that track.
+    map<string, int> titleIndex;
+
+    void rebuildTitleIndex()
+    {
+        titleIndex.clear();
+
+        for (int i = 0; i < items.getSize(); i++)
+        {
+            TrackBase* p = items.rawAt(i);
+            if (p != nullptr)
+                titleIndex[p->getTitle()] = i;
+        }
+    }
+
     int countHighEnergyRecursiveHelper(int index) const
     {
         // Base case: reached end of array
@@ -880,8 +906,10 @@ public:
     // Adds a pointer (manager takes ownership)
     void add(TrackBase* p)
     {
+        int newIndex = items.getSize();
         items.pushBack(p);
         bpmList.insertBack(p->getBpm()); // Week 10: insert BPM into linked list (back position)
+        titleIndex[p->getTitle()] = newIndex; // Week 12: insert/update title -> index map pair
     }
 
     // Removes by index (deletes object, shifts close the gap)
@@ -890,9 +918,12 @@ public:
     {
         // If invalid, DynamicArray::at throws out_of_range.
         TrackBase* doomed = items.at(index);
+        string removedTitle = doomed->getTitle();
+        titleIndex.erase(removedTitle); // Week 12: delete title key/value from the map
         delete doomed;
         items.removeAt(index);
         bpmList.removeAtPosition(index); // Week 10: keep linked list in sync with items
+        rebuildTitleIndex();             // Week 12: shifted array indexes must stay accurate
     }
 
     // Week 07 requirement: operator[] must THROW on invalid index.
@@ -944,6 +975,58 @@ public:
         }
 
         printSeparator(out);
+    }
+
+    const TrackBase* findTrackByTitle(const string& title) const
+    {
+        map<string, int>::const_iterator it = titleIndex.find(title); // Week 12 lookup
+        if (it == titleIndex.end())
+            return nullptr;
+
+        int index = it->second;
+        if (index < 0 || index >= items.getSize())
+            return nullptr;
+
+        return items.rawAt(index);
+    }
+
+    bool removeTrackByTitle(const string& title)
+    {
+        map<string, int>::const_iterator it = titleIndex.find(title); // Week 12 lookup before delete
+        if (it == titleIndex.end())
+            return false;
+
+        int index = it->second;
+        removeAt(index); // removeAt deletes the owned object and erases the map entry
+        return true;
+    }
+
+    int getTitleMapCount() const
+    {
+        return static_cast<int>(titleIndex.size());
+    }
+
+    void printTitleMap(ostream& out) const
+    {
+        out << "Title map lookup (std::map): ";
+
+        if (titleIndex.empty())
+        {
+            out << "(empty)\n";
+            return;
+        }
+
+        bool first = true;
+        for (map<string, int>::const_iterator it = titleIndex.begin(); it != titleIndex.end(); ++it)
+        {
+            if (!first)
+                out << " | ";
+
+            out << it->first << " => index " << it->second;
+            first = false;
+        }
+
+        out << "\n";
     }
 
     void saveReport(const string& filename) const
@@ -1202,6 +1285,8 @@ int main()
             // Week 11: stack + queue display
             manager.printRecentAdditionsStack(cout);
             manager.printPlaybackQueue(cout);
+            // Week 12: iterate all std::map key/value pairs
+            manager.printTitleMap(cout);
 
             // operator[] now throws if invalid, so we only do it if size > 0
             if (manager.getSize() > 0)
@@ -1287,6 +1372,40 @@ int main()
         }
 
         case 12:
+        {
+            cout << "\n--- Lookup Track by Title (Week 12 std::map) ---\n";
+            string title = getNonEmptyLine("Title to look up: ");
+            const TrackBase* found = manager.findTrackByTitle(title);
+
+            if (found == nullptr)
+                cout << "Title \"" << title << "\" was not found in the map.\n";
+            else
+                cout << "Found by title map: " << *found << "\n";
+
+            break;
+        }
+
+        case 13:
+        {
+            cout << "\n--- Remove Track by Title (Week 12 std::map) ---\n";
+            if (manager.getTitleMapCount() == 0)
+            {
+                cout << "No mapped tracks to remove.\n";
+                break;
+            }
+
+            manager.printTitleMap(cout);
+            string title = getNonEmptyLine("Title to remove: ");
+
+            if (manager.removeTrackByTitle(title))
+                cout << "Removed \"" << title << "\" using the title map.\n";
+            else
+                cout << "Title \"" << title << "\" was not found in the map.\n";
+
+            break;
+        }
+
+        case 14:
             cout << "\nGoodbye, " << djName << "! Keep the crowd moving.\n";
             break;
 
@@ -1294,7 +1413,7 @@ int main()
             cout << "Invalid choice.\n";
         }
 
-    } while (choice != 12);
+    } while (choice != 14);
 
     return 0;
 }
@@ -1305,7 +1424,7 @@ void showBanner()
 {
     cout << "=============================================\n";
     cout << "        DJ SET ARCHITECT - C++ EDITION       \n";
-    cout << "Weeks 1-4 + Weeks 5/6/7/09/10/11 Upgrade Combined\n";
+    cout << "Weeks 1-4 + Weeks 5/6/7/09/10/11/12 Upgrade Combined\n";
     cout << "=============================================\n";
 }
 
@@ -1329,7 +1448,11 @@ void showMenu()
     cout << "10) Sequential search BPM in library\n";
     cout << "11) Sort library BPMs then binary search\n\n";
 
-    cout << "12) Quit\n";
+    cout << "WEEK 12 (STL map title index)\n";
+    cout << "12) Lookup track by title\n";
+    cout << "13) Remove track by title\n\n";
+
+    cout << "14) Quit\n";
     cout << "----------------------------------------------\n";
 }
 
@@ -2170,6 +2293,65 @@ TEST_CASE("Week11 TrackManager prints empty stack and queue views")
     ostringstream queueOut;
     m.printPlaybackQueue(queueOut);
     CHECK(queueOut.str() == "Playback queue (FIFO): (empty)\n");
+}
+
+// ==================== Week 12 Tests: STL map title index ====================
+
+TEST_CASE("Week12 title map insert and lookup finds existing title")
+{
+    TrackManager m(2);
+    CHECK(m.getTitleMapCount() == 0);
+
+    m += new LocalTrack("Alpha", 120, MEDIUM, "a.wav", MixNotes(""));
+    m += new StreamTrack("Bravo", 125, HIGH, "Spotify", MixNotes(""));
+
+    CHECK(m.getTitleMapCount() == 2);
+
+    const TrackBase* found = m.findTrackByTitle("Bravo");
+    REQUIRE(found != nullptr);
+    CHECK(found->getTitle() == "Bravo");
+    CHECK(found->getBpm() == 125);
+}
+
+TEST_CASE("Week12 title map lookup missing title returns nullptr")
+{
+    TrackManager m(2);
+    m += new LocalTrack("Alpha", 120, MEDIUM, "a.wav", MixNotes(""));
+
+    CHECK(m.findTrackByTitle("Missing") == nullptr);
+}
+
+TEST_CASE("Week12 title map delete existing and missing title")
+{
+    TrackManager m(2);
+    m += new LocalTrack("Alpha", 120, MEDIUM, "a.wav", MixNotes(""));
+    m += new StreamTrack("Bravo", 125, HIGH, "Spotify", MixNotes(""));
+
+    CHECK(m.removeTrackByTitle("Missing") == false); // edge case: key does not exist
+    CHECK(m.getSize() == 2);
+    CHECK(m.getTitleMapCount() == 2);
+
+    CHECK(m.removeTrackByTitle("Alpha") == true);
+    CHECK(m.getSize() == 1);
+    CHECK(m.getTitleMapCount() == 1);
+    CHECK(m.findTrackByTitle("Alpha") == nullptr);
+    CHECK(m[0]->getTitle() == "Bravo");
+}
+
+TEST_CASE("Week12 title map iteration prints sorted key value pairs")
+{
+    TrackManager m(2);
+    m += new StreamTrack("Bravo", 125, HIGH, "Spotify", MixNotes(""));
+    m += new LocalTrack("Alpha", 120, MEDIUM, "a.wav", MixNotes(""));
+
+    ostringstream oss;
+    m.printTitleMap(oss);
+    CHECK(oss.str() == "Title map lookup (std::map): Alpha => index 1 | Bravo => index 0\n");
+
+    TrackManager empty(2);
+    ostringstream emptyOut;
+    empty.printTitleMap(emptyOut);
+    CHECK(emptyOut.str() == "Title map lookup (std::map): (empty)\n");
 }
 
 #endif
