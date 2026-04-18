@@ -23,8 +23,14 @@
     <ClInclude Include="doctest.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="json.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="DJSetArchtex.cd" />
+    <None Include="dj_tracks.json">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

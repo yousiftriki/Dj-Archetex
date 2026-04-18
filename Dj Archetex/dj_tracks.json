@@ -1,0 +1,42 @@
+[
+  {
+    "type": "local",
+    "title": "Opening Mirage",
+    "bpm": 118,
+    "energy": "Low",
+    "source": "opening_mirage.wav",
+    "notes": "Use for the first warm-up blend"
+  },
+  {
+    "type": "stream",
+    "title": "Metro Lift",
+    "bpm": 122,
+    "energy": "Medium",
+    "source": "Spotify",
+    "notes": "Keeps the groove moving"
+  },
+  {
+    "type": "local",
+    "title": "Voltage Run",
+    "bpm": 126,
+    "energy": "High",
+    "source": "voltage_run.wav",
+    "notes": "Strong peak-hour transition tool"
+  },
+  {
+    "type": "stream",
+    "title": "Glass Signal",
+    "bpm": 124,
+    "energy": "Medium",
+    "source": "Apple Music",
+    "notes": "Works between vocal cuts"
+  },
+  {
+    "type": "local",
+    "title": "Last Train Home",
+    "bpm": 120,
+    "energy": "Low",
+    "source": "last_train_home.wav",
+    "notes": "Good closer for the final cooldown"
+  }
+]
