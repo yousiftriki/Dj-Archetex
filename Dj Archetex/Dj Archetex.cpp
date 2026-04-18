@@ -117,10 +117,13 @@ Concepts used (rubric):
 #include <sstream>
 #include <stdexcept>   // runtime_error, out_of_range
 #include <exception>
+#include <cstdio>
 #include <vector>      // Week 09 include kept for minimal change history
 #include <map>         // Week 12: std::map title lookup index
+#include "json.hpp"    // Week 13: nlohmann/json single-header library
 
 using namespace std;
+using nlohmann::json;
 
 // -------------------- Constants (avoid magic numbers) --------------------
 // Original (Weeks 1-4) library limits
@@ -140,6 +143,7 @@ const int TYPE_W = 12;
 // Validation ranges
 const int BPM_MIN = 60;
 const int BPM_MAX = 200;
+const char* const DEFAULT_JSON_FILE = "dj_tracks.json";
 
 // Menu range (merged menu: original + week5 + week9)
 const int MENU_MIN = 1;
@@ -176,6 +180,7 @@ double getValidatedDouble(const string& prompt, double minVal, double maxVal);
 // Enum helpers
 EnergyLevel getEnergyFromUser();
 string energyToString(EnergyLevel e);
+EnergyLevel energyFromString(const string& energyText);
 
 // -------------------- Weeks 1-4 Features --------------------
 void addTrack(Track library[], int& count);
@@ -1109,6 +1114,62 @@ public:
     // Week 09/10 helper: returns BPM value at position i
     int getBpmAt(int i) const { return bpmList.at(i); }
 
+    bool loadTracksFromJsonFile(const string& filename, string& statusMessage)
+    {
+        try
+        {
+            ifstream fin(filename.c_str());
+            if (!fin)
+                throw DJException("Could not open JSON file: " + filename);
+
+            json trackData;
+            fin >> trackData;
+
+            if (!trackData.is_array())
+                throw DJException("JSON root must be an array of track objects.");
+
+            int loadedCount = 0;
+
+            // JSON data is converted into TrackBase-derived objects so it feeds the
+            // existing manager, linked list, stack/queue views, and title map.
+            for (json::const_iterator it = trackData.begin(); it != trackData.end(); ++it)
+            {
+                const json& entry = *it;
+
+                const string type = entry.at("type").get<string>();
+                const string title = entry.at("title").get<string>();
+                const int bpm = entry.at("bpm").get<int>();
+                const string energyText = entry.at("energy").get<string>();
+                const string source = entry.at("source").get<string>();
+                const string notes = entry.at("notes").get<string>();
+
+                if (bpm < BPM_MIN || bpm > BPM_MAX)
+                    throw DJException("JSON BPM out of range for track: " + title);
+
+                const EnergyLevel energy = energyFromString(energyText);
+
+                if (type == "local")
+                    add(new LocalTrack(title, bpm, energy, source, MixNotes(notes)));
+                else if (type == "stream")
+                    add(new StreamTrack(title, bpm, energy, source, MixNotes(notes)));
+                else
+                    throw DJException("Unsupported track type in JSON: " + type);
+
+                loadedCount++;
+            }
+
+            ostringstream oss;
+            oss << "Loaded " << loadedCount << " tracks from " << filename << ".";
+            statusMessage = oss.str();
+            return true;
+        }
+        catch (const exception& ex)
+        {
+            statusMessage = ex.what();
+            return false;
+        }
+    }
+
     // Week 10 helper: linked list print/traverse in one place
     void printBpmLinkedList(ostream& out) const
     {
@@ -1195,8 +1256,14 @@ int main()
 
     // Week 5/6/7 storage
     TrackManager manager(2);
+    string jsonStatus;
 
     showBanner();
+
+    if (manager.loadTracksFromJsonFile(DEFAULT_JSON_FILE, jsonStatus))
+        cout << "Week 13 JSON load: " << jsonStatus << "\n";
+    else
+        cout << "Week 13 JSON load skipped: " << jsonStatus << "\n";
 
     // 3+ mixed inputs: string (spaces), int, double (legacy)
     string djName = getNonEmptyLine("Enter your DJ name: ");
@@ -1556,6 +1623,18 @@ string energyToString(EnergyLevel e)
     return "High";
 }
 
+EnergyLevel energyFromString(const string& energyText)
+{
+    if (energyText == "Low" || energyText == "low")
+        return LOW;
+    if (energyText == "Medium" || energyText == "medium")
+        return MEDIUM;
+    if (energyText == "High" || energyText == "high")
+        return HIGH;
+
+    throw DJException("Invalid energy value in JSON: " + energyText);
+}
+
 // -------------------- Output Helpers (Weeks 1-4) --------------------
 void printLegacyTableHeader(ostream& out)
 {
@@ -1762,6 +1841,12 @@ Track makeTrack(const string& title, const string& genre, int bpm, EnergyLevel e
     t.energy = e;
     t.notes = "";
     return t;
+}
+
+void writeTextFile(const string& filename, const string& contents)
+{
+    ofstream fout(filename.c_str());
+    fout << contents;
 }
 
 // -------------------- Existing Week 05 tests (keep) --------------------
@@ -2352,6 +2437,67 @@ TEST_CASE("Week12 title map iteration prints sorted key value pairs")
     ostringstream emptyOut;
     empty.printTitleMap(emptyOut);
     CHECK(emptyOut.str() == "Title map lookup (std::map): (empty)\n");
+}
+
+TEST_CASE("Week13 JSON load reads disk file into existing manager structures")
+{
+    const string filename = "week13_valid_tracks.json";
+    writeTextFile(
+        filename,
+        "["
+        "{\"type\":\"local\",\"title\":\"Sunrise Intro\",\"bpm\":120,\"energy\":\"Low\",\"source\":\"sunrise.wav\",\"notes\":\"Warm opener\"},"
+        "{\"type\":\"stream\",\"title\":\"Neon Drive\",\"bpm\":124,\"energy\":\"Medium\",\"source\":\"Spotify\",\"notes\":\"Build momentum\"},"
+        "{\"type\":\"local\",\"title\":\"Warehouse Lift\",\"bpm\":128,\"energy\":\"High\",\"source\":\"warehouse.wav\",\"notes\":\"Peak groove\"},"
+        "{\"type\":\"stream\",\"title\":\"Pulse Check\",\"bpm\":126,\"energy\":\"Medium\",\"source\":\"Apple Music\",\"notes\":\"Reset tension\"},"
+        "{\"type\":\"local\",\"title\":\"Closing Lights\",\"bpm\":122,\"energy\":\"Low\",\"source\":\"closing.wav\",\"notes\":\"Smooth finish\"}"
+        "]"
+    );
+
+    TrackManager m(2);
+    string status;
+    const bool loaded = m.loadTracksFromJsonFile(filename, status);
+
+    CHECK(loaded == true);
+    CHECK(status.find("Loaded 5 tracks") != string::npos);
+    CHECK(m.getSize() == 5);
+    CHECK(m.getTitleMapCount() == 5);
+    CHECK(m.getBpmCount() == 5);
+    CHECK(m.sequentialSearchBpm(128) == 2);
+
+    const TrackBase* found = m.findTrackByTitle("Neon Drive");
+    REQUIRE(found != nullptr);
+    CHECK(found->getType() == "StreamTrack");
+    CHECK(found->getBpm() == 124);
+
+    remove(filename.c_str());
+}
+
+TEST_CASE("Week13 JSON load handles missing file with try catch path")
+{
+    TrackManager m(2);
+    string status;
+
+    const bool loaded = m.loadTracksFromJsonFile("missing_week13_tracks.json", status);
+
+    CHECK(loaded == false);
+    CHECK(status.find("Could not open JSON file") != string::npos);
+    CHECK(m.getSize() == 0);
+}
+
+TEST_CASE("Week13 JSON load handles malformed JSON with try catch path")
+{
+    const string filename = "week13_bad_tracks.json";
+    writeTextFile(filename, "[{\"type\":\"local\",\"title\":\"Broken\"");
+
+    TrackManager m(2);
+    string status;
+    const bool loaded = m.loadTracksFromJsonFile(filename, status);
+
+    CHECK(loaded == false);
+    CHECK(status.empty() == false);
+    CHECK(m.getSize() == 0);
+
+    remove(filename.c_str());
 }
 
 #endif

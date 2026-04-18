@@ -218,6 +218,12 @@ rcf/
 AppPackages/
 BundleArtifacts/
 Package.StoreAssociation.xml
+
+# Local helper-script build output
+.build/
+tests
+dj_archetex_debug
+dj_archetex_release
 _pkginfo.txt
 *.appx
 *.appxbundle
