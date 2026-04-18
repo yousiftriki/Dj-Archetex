@@ -853,15 +853,15 @@ private:
     // This linked list stays index-aligned with items[].
     BpmLinkedList bpmList;
 
-    // -------------------- Week 12: STL map title lookup index --------------------
-    // std::map is used here instead of repeatedly scanning DynamicArray because a
-    // title is a meaningful key and map::find gives direct key-based lookup.
-    // The DynamicArray still owns the TrackBase objects; this map stores only
-    // each title key and the current array index for that track.
+    // DN: Week 12 map upgrade lives inside TrackManager class
+    // DN: The DynamicArray still owns the TrackBase objects; this map stores only
+    // DN: each title key and the current array index for that track.
     map<string, int> titleIndex;
 
     void rebuildTitleIndex()
     {
+        // DN: Rebuild keeps every map value aligned with the shifted array indexes
+        // DN: after a removal, so later lookups still point at the right track.
         titleIndex.clear();
 
         for (int i = 0; i < items.getSize(); i++)
@@ -906,6 +906,7 @@ public:
     // Adds a pointer (manager takes ownership)
     void add(TrackBase* p)
     {
+        // DN: Insert operation for the  map.
         int newIndex = items.getSize();
         items.pushBack(p);
         bpmList.insertBack(p->getBpm()); // Week 10: insert BPM into linked list (back position)
@@ -919,6 +920,7 @@ public:
         // If invalid, DynamicArray::at throws out_of_range.
         TrackBase* doomed = items.at(index);
         string removedTitle = doomed->getTitle();
+        // DN: Delete operation for the map requirement.
         titleIndex.erase(removedTitle); // Week 12: delete title key/value from the map
         delete doomed;
         items.removeAt(index);
@@ -979,6 +981,7 @@ public:
 
     const TrackBase* findTrackByTitle(const string& title) const
     {
+        // DN: Lookup operation for the Week 12 map requirement.
         map<string, int>::const_iterator it = titleIndex.find(title); // Week 12 lookup
         if (it == titleIndex.end())
             return nullptr;
@@ -992,6 +995,7 @@ public:
 
     bool removeTrackByTitle(const string& title)
     {
+        // DN: Title based delete uses the map first, then removes from owned storage.
         map<string, int>::const_iterator it = titleIndex.find(title); // Week 12 lookup before delete
         if (it == titleIndex.end())
             return false;
@@ -1008,6 +1012,7 @@ public:
 
     void printTitleMap(ostream& out) const
     {
+        // DN: Iterate through all key/value pairs so the user can see the full map.
         out << "Title map lookup (std::map): ";
 
         if (titleIndex.empty())
@@ -2295,6 +2300,7 @@ TEST_CASE("Week11 TrackManager prints empty stack and queue views")
     CHECK(queueOut.str() == "Playback queue (FIFO): (empty)\n");
 }
 
+// DN: Week 12 BELOW doctests cover insert, lookup, delete, iterate, and map sync edge cases.
 // ==================== Week 12 Tests: STL map title index ====================
 
 TEST_CASE("Week12 title map insert and lookup finds existing title")
@@ -2352,6 +2358,27 @@ TEST_CASE("Week12 title map iteration prints sorted key value pairs")
     ostringstream emptyOut;
     empty.printTitleMap(emptyOut);
     CHECK(emptyOut.str() == "Title map lookup (std::map): (empty)\n");
+}
+
+TEST_CASE("Week12 title map rebuild keeps lookup correct after middle deletion")
+{
+    TrackManager m(2);
+    m += new LocalTrack("Alpha", 120, MEDIUM, "a.wav", MixNotes(""));
+    m += new StreamTrack("Bravo", 125, HIGH, "Spotify", MixNotes(""));
+    m += new LocalTrack("Charlie", 130, HIGH, "c.wav", MixNotes(""));
+
+    CHECK(m.removeTrackByTitle("Bravo") == true);
+    CHECK(m.getSize() == 2);
+    CHECK(m.getTitleMapCount() == 2);
+
+    const TrackBase* found = m.findTrackByTitle("Charlie");
+    REQUIRE(found != nullptr);
+    CHECK(found->getTitle() == "Charlie");
+    CHECK(m[1]->getTitle() == "Charlie");
+
+    ostringstream oss;
+    m.printTitleMap(oss);
+    CHECK(oss.str() == "Title map lookup (std::map): Alpha => index 0 | Charlie => index 1\n");
 }
 
 #endif
