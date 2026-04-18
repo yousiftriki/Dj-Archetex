@@ -144,7 +144,7 @@ const int TYPE_W = 12;
 const int BPM_MIN = 60;
 const int BPM_MAX = 200;
 const char* const DEFAULT_JSON_FILE = "dj_tracks.json";
-1
+
 // Menu range (merged menu: original + week5 + week9)
 const int MENU_MIN = 1;
 const int MENU_MAX = 14; // Week 12: expanded for std::map title lookup/removal
