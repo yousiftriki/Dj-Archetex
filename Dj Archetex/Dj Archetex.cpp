@@ -2300,7 +2300,7 @@ TEST_CASE("Week11 TrackManager prints empty stack and queue views")
     CHECK(queueOut.str() == "Playback queue (FIFO): (empty)\n");
 }
 
-// DN: Week 12 BELOW doctests cover insert, lookup, delete, iterate, and map sync edge cases.
+// DN: Week 12 BELOW doctests cover insert, lookup, delete, iterate, and map sync edge cases
 // ==================== Week 12 Tests: STL map title index ====================
 
 TEST_CASE("Week12 title map insert and lookup finds existing title")
