@@ -120,6 +120,10 @@ Concepts used (rubric):
 #include <cstdio>
 #include <vector>      // Week 09 include kept for minimal change history
 #include <map>         // Week 12: std::map title lookup index
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include "HttpClient.h" // Week 14: provided REST API client
 #include "json.hpp"    // Week 13: nlohmann/json single-header library
 
 using namespace std;
@@ -147,7 +151,7 @@ const char* const DEFAULT_JSON_FILE = "dj_tracks.json";
 
 // Menu range (merged menu: original + week5 + week9)
 const int MENU_MIN = 1;
-const int MENU_MAX = 14; // Week 12: expanded for std::map title lookup/removal
+const int MENU_MAX = 16; // Week 14: expanded for REST API GET/POST options
 
 // -------------------- Enum --------------------
 // EnergyLevel models how intense a track feels in a set (meaningful for DJ planning).
@@ -220,6 +224,42 @@ class DJException : public std::runtime_error
 public:
     DJException(const std::string& msg)
         : std::runtime_error(msg) {}
+};
+
+// -------------------- Week 14: REST API Response Collector --------------------
+// This class derives from the provided HttpClient and captures the full
+// HTTP response body so the program can parse it as JSON after Get/Post finishes.
+class DjRestClient : public HttpClient
+{
+private:
+    string responseBody;
+
+protected:
+    // Called before HttpClient begins reading response data.
+    // We clear the old body so each GET or POST starts with an empty string.
+    void StartOfData() override
+    {
+        responseBody.clear();
+    }
+
+    // Called once for each chunk of bytes received from the HTTP response.
+    // The API may arrive in pieces, so we append each chunk to build the full JSON body.
+    void Data(const char* data, const unsigned int size) override
+    {
+        responseBody.append(data, size);
+    }
+
+    // Called after all response chunks have been read.
+    // No extra work is needed because responseBody already contains the complete body.
+    void EndOfData() override
+    {
+    }
+
+public:
+    string GetResponse() const
+    {
+        return responseBody;
+    }
 };
 
 #ifdef _MSC_VER
@@ -1114,6 +1154,161 @@ public:
     // Week 09/10 helper: returns BPM value at position i
     int getBpmAt(int i) const { return bpmList.at(i); }
 
+    bool loadJokeBreaksFromApiJson(const string& responseBody, string& statusMessage)
+    {
+        try
+        {
+            json apiData = json::parse(responseBody);
+
+            if (!apiData.contains("jokes") || !apiData.at("jokes").is_array())
+                throw DJException("API JSON must contain a jokes array.");
+
+            int loadedCount = 0;
+
+            // Week 14: REST API joke data is converted into StreamTrack objects.
+            // This connects API data to the existing TrackManager storage, BPM list,
+            // title map, recent-additions stack view, and playback queue view.
+            for (json::const_iterator it = apiData.at("jokes").begin(); it != apiData.at("jokes").end(); ++it)
+            {
+                const json& joke = *it;
+
+                const int id = joke.at("id").get<int>();
+                const string category = joke.at("category").get<string>();
+                const string setup = joke.at("setup").get<string>();
+                const string punchline = joke.at("punchline").get<string>();
+
+                ostringstream titleBuilder;
+                titleBuilder << "Crowd Break #" << id;
+
+                ostringstream notesBuilder;
+                notesBuilder << setup << " / " << punchline;
+
+                int bpm = 100;
+                EnergyLevel energy = LOW;
+
+                if (category == "programming")
+                {
+                    bpm = 118;
+                    energy = MEDIUM;
+                }
+                else if (category == "math")
+                {
+                    bpm = 110;
+                    energy = LOW;
+                }
+                else if (category == "general")
+                {
+                    bpm = 104;
+                    energy = LOW;
+                }
+
+                add(new StreamTrack(
+                    titleBuilder.str(),
+                    bpm,
+                    energy,
+                    "api.macomb.io/jokes",
+                    MixNotes(notesBuilder.str())
+                ));
+
+                loadedCount++;
+            }
+
+            ostringstream oss;
+            oss << "Loaded " << loadedCount << " crowd break jokes from the REST API.";
+            statusMessage = oss.str();
+            return true;
+        }
+        catch (const nlohmann::json::exception& ex)
+        {
+            statusMessage = string("Could not parse jokes API response: ") + ex.what();
+            return false;
+        }
+        catch (const exception& ex)
+        {
+            statusMessage = ex.what();
+            return false;
+        }
+    }
+
+    bool loadJokeBreaksFromApi(string& statusMessage)
+    {
+        DjRestClient client;
+
+        if (!client.Connect("api.macomb.io", INTERNET_DEFAULT_HTTP_PORT))
+        {
+            statusMessage = "Could not connect to api.macomb.io.";
+            return false;
+        }
+
+        map<string, string> queryParams;
+        queryParams["count"] = "3";
+        queryParams["category"] = "programming";
+
+        if (!client.Get("/jokes", queryParams))
+        {
+            statusMessage = "GET request to /jokes failed.";
+            return false;
+        }
+
+        return loadJokeBreaksFromApiJson(client.GetResponse(), statusMessage);
+    }
+
+    bool parseJokePostResponse(const string& responseBody, int& assignedId, string& statusMessage) const
+    {
+        try
+        {
+            json apiData = json::parse(responseBody);
+
+            if (!apiData.contains("joke") || !apiData.at("joke").contains("id"))
+                throw DJException("POST response did not include the assigned joke ID.");
+
+            assignedId = apiData.at("joke").at("id").get<int>();
+
+            ostringstream oss;
+            oss << "Server accepted the new joke with ID #" << assignedId << ".";
+            statusMessage = oss.str();
+            return true;
+        }
+        catch (const nlohmann::json::exception& ex)
+        {
+            statusMessage = string("Could not parse POST response: ") + ex.what();
+            return false;
+        }
+        catch (const exception& ex)
+        {
+            statusMessage = ex.what();
+            return false;
+        }
+    }
+
+    bool postJokeBreakToApi(const string& category,
+        const string& setup,
+        const string& punchline,
+        int& assignedId,
+        string& statusMessage) const
+    {
+        DjRestClient client;
+
+        if (!client.Connect("api.macomb.io", INTERNET_DEFAULT_HTTP_PORT))
+        {
+            statusMessage = "Could not connect to api.macomb.io.";
+            return false;
+        }
+
+        json requestBody;
+        requestBody["category"] = category;
+        requestBody["setup"] = setup;
+        requestBody["punchline"] = punchline;
+
+        if (!client.Post("/jokes", requestBody.dump()))
+        {
+            statusMessage = "POST request to /jokes failed.";
+            return false;
+        }
+
+        return parseJokePostResponse(client.GetResponse(), assignedId, statusMessage);
+    }
+
     bool loadTracksFromJsonFile(const string& filename, string& statusMessage)
     {
         try
@@ -1473,6 +1668,44 @@ int main()
         }
 
         case 14:
+        {
+            cout << "\n--- Load Crowd Break Jokes from REST API (Week 14) ---\n";
+            string status;
+
+            if (manager.loadJokeBreaksFromApi(status))
+            {
+                cout << status << "\n";
+                manager.printAll(cout);
+            }
+            else
+            {
+                cout << "REST API load failed: " << status << "\n";
+            }
+
+            break;
+        }
+
+        case 15:
+        {
+            cout << "\n--- Post a New Joke to REST API (Week 14) ---\n";
+            cout << "Valid categories: programming, general, math\n";
+
+            string category = getNonEmptyLine("Category: ");
+            string setup = getNonEmptyLine("Setup: ");
+            string punchline = getNonEmptyLine("Punchline: ");
+
+            int assignedId = 0;
+            string status;
+
+            if (manager.postJokeBreakToApi(category, setup, punchline, assignedId, status))
+                cout << status << "\n";
+            else
+                cout << "REST API POST failed: " << status << "\n";
+
+            break;
+        }
+
+        case 16:
             cout << "\nGoodbye, " << djName << "! Keep the crowd moving.\n";
             break;
 
@@ -1480,7 +1713,8 @@ int main()
             cout << "Invalid choice.\n";
         }
 
-    } while (choice != 14);
+    } while (choice != 16);
+
 
     return 0;
 }
@@ -1519,7 +1753,11 @@ void showMenu()
     cout << "12) Lookup track by title\n";
     cout << "13) Remove track by title\n\n";
 
-    cout << "14) Quit\n";
+    cout << "WEEK 14 (REST API + JSON)\n";
+    cout << "14) Load crowd break jokes from REST API\n";
+    cout << "15) Post a new joke to REST API\n\n";
+
+    cout << "16) Quit\n";
     cout << "----------------------------------------------\n";
 }
 
@@ -2497,6 +2735,80 @@ TEST_CASE("Week13 JSON load handles malformed JSON with try catch path")
     CHECK(m.getSize() == 0);
 
     remove(filename.c_str());
+}
+
+TEST_CASE("Week14 REST JSON load converts jokes into existing TrackManager structures")
+{
+    const string response =
+        "{"
+        "\"count\":2,"
+        "\"jokes\":["
+        "{\"id\":101,\"category\":\"programming\",\"setup\":\"Why did the DJ use C++?\",\"punchline\":\"For the class mix.\"},"
+        "{\"id\":102,\"category\":\"general\",\"setup\":\"Why did the crowd cheer?\",\"punchline\":\"The drop landed.\"}"
+        "]"
+        "}";
+
+    TrackManager m(2);
+    string status;
+    const bool loaded = m.loadJokeBreaksFromApiJson(response, status);
+
+    CHECK(loaded == true);
+    CHECK(status.find("Loaded 2 crowd break jokes") != string::npos);
+    CHECK(m.getSize() == 2);
+    CHECK(m.getTitleMapCount() == 2);
+    CHECK(m.getBpmCount() == 2);
+
+    const TrackBase* first = m.findTrackByTitle("Crowd Break #101");
+    REQUIRE(first != nullptr);
+    CHECK(first->getType() == "StreamTrack");
+    CHECK(first->getBpm() == 118);
+    CHECK(first->getEnergy() == MEDIUM);
+
+    const TrackBase* second = m.findTrackByTitle("Crowd Break #102");
+    REQUIRE(second != nullptr);
+    CHECK(second->getBpm() == 104);
+    CHECK(second->getEnergy() == LOW);
+}
+
+TEST_CASE("Week14 REST JSON load handles malformed jokes response")
+{
+    TrackManager m(2);
+    string status;
+
+    const bool loaded = m.loadJokeBreaksFromApiJson("{\"jokes\":[{\"id\":1", status);
+
+    CHECK(loaded == false);
+    CHECK(status.find("Could not parse jokes API response") != string::npos);
+    CHECK(m.getSize() == 0);
+}
+
+TEST_CASE("Week14 POST response parser extracts assigned joke ID")
+{
+    TrackManager m(2);
+    int assignedId = 0;
+    string status;
+
+    const bool parsed = m.parseJokePostResponse(
+        "{\"message\":\"joke added successfully\",\"joke\":{\"id\":77,\"category\":\"programming\"}}",
+        assignedId,
+        status
+    );
+
+    CHECK(parsed == true);
+    CHECK(assignedId == 77);
+    CHECK(status.find("ID #77") != string::npos);
+}
+
+TEST_CASE("Week14 POST response parser handles malformed response")
+{
+    TrackManager m(2);
+    int assignedId = 0;
+    string status;
+
+    const bool parsed = m.parseJokePostResponse("{\"joke\":{\"id\":", assignedId, status);
+
+    CHECK(parsed == false);
+    CHECK(status.find("Could not parse POST response") != string::npos);
 }
 
 #endif
