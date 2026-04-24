@@ -131,6 +131,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="doctest.h" />
+    <ClInclude Include="HttpClient.h" />
     <ClInclude Include="json.hpp" />
   </ItemGroup>
   <ItemGroup>
