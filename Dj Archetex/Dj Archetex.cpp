@@ -222,6 +222,42 @@ public:
         : std::runtime_error(msg) {}
 };
 
+// -------------------- Week 14: REST API Client --------------------
+// Derived class inheriting from the provided HttpClient framework
+class DjApiClient : public HttpClient
+{
+private:
+    std::string responseBody;
+
+protected:
+    // Overrides StartOfData to clear out any previous accumulations
+    void StartOfData() override
+    {
+        responseBody.clear();
+    }
+
+    // Overrides Data to build the raw HTTP response gradually
+    void Data(const char* data, const unsigned int len) override
+    {
+        responseBody.append(data, len);
+    }
+
+    // Overrides EndOfData when reading is completed
+    void EndOfData() override
+    {
+        // No strict finalization needed for strings
+    }
+
+public:
+    DjApiClient() : responseBody("") {}
+
+    // Exposes the completed payload safely 
+    std::string GetResponse() const
+    {
+        return responseBody;
+    }
+};
+
 #ifdef _MSC_VER
 // Enable leak-check-at-exit automatically (useful for doctest runs too).
 struct CrtLeakGuard
@@ -1472,7 +1508,144 @@ int main()
             break;
         }
 
+        // -------------------- Week 14: REST API GET --------------------
         case 14:
+        {
+            cout << "\n--- Fetch DJ Jokes (API GET) ---\n";
+            DjApiClient apiClient;
+            
+            // Connect to server (HTTP not HTTPS as per assignment)
+            if (!apiClient.Connect("api.macomb.io", 80))
+            {
+                cout << "Failed to connect to API server.\n";
+                break;
+            }
+
+            string countStr = getNonEmptyLine("How many jokes do you want to fetch? (1-5): ");
+            // Use AddQueryParameters via std::map
+            map<string, string> qp;
+            qp["count"] = countStr;
+            cout << "Requesting from api.macomb.io/jokes...\n";
+            
+            try
+            {
+                if (apiClient.Get("/jokes", qp))
+                {
+                    string response = apiClient.GetResponse();
+                    
+                    // Parse JSON array and use the try-catch for exception handling
+                    json j = json::parse(response);
+                    if (j.is_array())
+                    {
+                        int added = 0;
+                        for (json::iterator it = j.begin(); it != j.end(); ++it)
+                        {
+                            if (it->contains("joke"))
+                            {
+                                if (!apiJokesQueue.isFull())
+                                {
+                                    apiJokesQueue.enqueue((*it)["joke"].get<string>());
+                                    added++;
+                                }
+                                else
+                                {
+                                    cout << "Joke queue is full! Not all jokes were added.\n";
+                                    break;
+                                }
+                            }
+                        }
+                        cout << "Successfully added " << added << " jokes to the queue.\n";
+                    }
+                    else
+                    {
+                        cout << "Unexpected JSON format from API.\n";
+                    }
+                }
+                else 
+                {
+                    cout << "API GET request failed.\n";
+                }
+            }
+            catch (const nlohmann::json::exception& ex)
+            {
+                cout << "JSON Parsing Error (GET): " << ex.what() << "\n";
+            }
+            catch (const exception& ex)
+            {
+                cout << "HTTP Request Error: " << ex.what() << "\n";
+            }
+            break;
+        }
+
+        // -------------------- Week 14: REST API POST --------------------
+        case 15:
+        {
+            cout << "\n--- Post a DJ Joke (API POST) ---\n";
+            string myJoke = getNonEmptyLine("Enter your DJ Joke to post: ");
+            
+            // Build JSON object 
+            json postBody;
+            postBody["joke"] = myJoke;
+            string jsonBody = postBody.dump();
+            
+            DjApiClient apiClient;
+            if (!apiClient.Connect("api.macomb.io", 80))
+            {
+                cout << "Failed to connect to API server.\n";
+                break;
+            }
+
+            try
+            {
+                cout << "Sending POST to http://api.macomb.io/jokes...\n";
+                if (apiClient.Post("/jokes", jsonBody))
+                {
+                    string response = apiClient.GetResponse();
+                    
+                    // Parse the response to confirm assignment
+                    json j = json::parse(response);
+                    if (j.contains("id"))
+                    {
+                        cout << "Joke successfully posted! Assigned ID: " << j["id"] << "\n";
+                    }
+                    else
+                    {
+                        cout << "Joke posted, but no ID was returned. Raw Response: " << response << "\n";
+                    }
+                }
+                else
+                {
+                    cout << "API POST request failed.\n";
+                }
+            }
+            catch (const nlohmann::json::exception& ex)
+            {
+                cout << "JSON Parsing Error (POST): " << ex.what() << "\n";
+            }
+            catch (const exception& ex)
+            {
+                cout << "HTTP Request Error: " << ex.what() << "\n";
+            }
+            break;
+        }
+
+        // -------------------- Week 14: Meaningful Data Use --------------------
+        case 16:
+        {
+            cout << "\n--- Hear DJ Jokes (Queue) ---\n";
+            if (apiJokesQueue.isEmpty())
+            {
+                cout << "The joke queue is empty. Fetch some first (Option 14)!\n";
+            }
+            else
+            {
+                cout << "Next Joke in Queue: " << apiJokesQueue.front() << "\n";
+                apiJokesQueue.dequeue();
+            }
+            break;
+        }
+
+        case 17:
             cout << "\nGoodbye, " << djName << "! Keep the crowd moving.\n";
             break;
 
@@ -1480,7 +1653,7 @@ int main()
             cout << "Invalid choice.\n";
         }
 
-    } while (choice != 14);
+    } while (choice != 17);
 
     return 0;
 }
@@ -1519,7 +1692,12 @@ void showMenu()
     cout << "12) Lookup track by title\n";
     cout << "13) Remove track by title\n\n";
 
-    cout << "14) Quit\n";
+    cout << "WEEK 14 (REST API & JSON Parse)\n";
+    cout << "14) Fetch DJ Jokes (API GET)\n";
+    cout << "15) Post a DJ Joke (API POST)\n";
+    cout << "16) Hear DJ Jokes (Queue)\n\n";
+
+    cout << "17) Quit\n";
     cout << "----------------------------------------------\n";
 }
 
