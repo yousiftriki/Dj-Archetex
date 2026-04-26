@@ -121,7 +121,9 @@ Concepts used (rubric):
 #include <vector>      // Week 09 include kept for minimal change history
 #include <map>         // Week 12: std::map title lookup index
 #include "json.hpp"    // Week 13: nlohmann/json single-header library
-#include "HttpClient.h"  // Week 14: HTTP client base class for REST API
+#ifdef _WIN32
+#include "HttpClient.h"  // Week 14: HTTP client base class for REST API (Windows-only, uses WinInet)
+#endif
 
 using namespace std;
 using nlohmann::json;
@@ -225,6 +227,8 @@ public:
 
 // -------------------- Week 14: REST API Client --------------------
 // Derived class inheriting from the provided HttpClient framework
+// Guarded with _WIN32 because HttpClient.h depends on WinInet (Windows-only)
+#ifdef _WIN32
 class DjApiClient : public HttpClient
 {
 private:
@@ -258,6 +262,7 @@ public:
         return responseBody;
     }
 };
+#endif // _WIN32
 
 #ifdef _MSC_VER
 // Enable leak-check-at-exit automatically (useful for doctest runs too).
@@ -2685,6 +2690,7 @@ TEST_CASE("Week13 JSON load handles malformed JSON with try catch path")
 
 // ==================== Week 14: REST API Client + JSON Parsing Doctests ====================
 
+#ifdef _WIN32
 TEST_CASE("Week14 DjApiClient accumulates response via Data override")
 {
     // Verify that the derived class correctly accumulates data chunks
@@ -2695,6 +2701,7 @@ TEST_CASE("Week14 DjApiClient accumulates response via Data override")
     // The key test is that GetResponse returns empty string on a freshly constructed client
     CHECK(client.GetResponse().empty());
 }
+#endif // _WIN32
 
 TEST_CASE("Week14 JSON parse of valid joke array")
 {
