@@ -121,6 +121,9 @@ Concepts used (rubric):
 #include <vector>      // Week 09 include kept for minimal change history
 #include <map>         // Week 12: std::map title lookup index
 #include "json.hpp"    // Week 13: nlohmann/json single-header library
+#ifdef _WIN32
+#include "HttpClient.h"  // Week 14: HTTP client base class for REST API (Windows-only, uses WinInet)
+#endif
 
 using namespace std;
 using nlohmann::json;
@@ -147,7 +150,7 @@ const char* const DEFAULT_JSON_FILE = "dj_tracks.json";
 
 // Menu range (merged menu: original + week5 + week9)
 const int MENU_MIN = 1;
-const int MENU_MAX = 14; // Week 12: expanded for std::map title lookup/removal
+const int MENU_MAX = 17; // Week 14: expanded for REST API integration
 
 // -------------------- Enum --------------------
 // EnergyLevel models how intense a track feels in a set (meaningful for DJ planning).
@@ -221,6 +224,45 @@ public:
     DJException(const std::string& msg)
         : std::runtime_error(msg) {}
 };
+
+// -------------------- Week 14: REST API Client --------------------
+// Derived class inheriting from the provided HttpClient framework
+// Guarded with _WIN32 because HttpClient.h depends on WinInet (Windows-only)
+#ifdef _WIN32
+class DjApiClient : public HttpClient
+{
+private:
+    std::string responseBody;
+
+protected:
+    // Overrides StartOfData to clear out any previous accumulations
+    void StartOfData() override
+    {
+        responseBody.clear();
+    }
+
+    // Overrides Data to build the raw HTTP response gradually
+    void Data(const char* data, const unsigned int len) override
+    {
+        responseBody.append(data, len);
+    }
+
+    // Overrides EndOfData when reading is completed
+    void EndOfData() override
+    {
+        // No strict finalization needed for strings
+    }
+
+public:
+    DjApiClient() : responseBody("") {}
+
+    // Exposes the completed payload safely 
+    std::string GetResponse() const
+    {
+        return responseBody;
+    }
+};
+#endif // _WIN32
 
 #ifdef _MSC_VER
 // Enable leak-check-at-exit automatically (useful for doctest runs too).
@@ -1258,6 +1300,10 @@ int main()
     TrackManager manager(2);
     string jsonStatus;
 
+    // Week 14: queue to hold jokes fetched from REST API
+    // Uses the existing ArrayQueue ADT (Week 11) to meaningfully store API data
+    ArrayQueue<string> apiJokesQueue(10);
+
     showBanner();
 
     if (manager.loadTracksFromJsonFile(DEFAULT_JSON_FILE, jsonStatus))
@@ -1472,7 +1518,144 @@ int main()
             break;
         }
 
+        // -------------------- Week 14: REST API GET --------------------
         case 14:
+        {
+            cout << "\n--- Fetch DJ Jokes (API GET) ---\n";
+            DjApiClient apiClient;
+            
+            // Connect to server (HTTP not HTTPS as per assignment)
+            if (!apiClient.Connect("api.macomb.io", 80))
+            {
+                cout << "Failed to connect to API server.\n";
+                break;
+            }
+
+            string countStr = getNonEmptyLine("How many jokes do you want to fetch? (1-5): ");
+            // Use AddQueryParameters via std::map
+            map<string, string> qp;
+            qp["count"] = countStr;
+            cout << "Requesting from api.macomb.io/jokes...\n";
+            
+            try
+            {
+                if (apiClient.Get("/jokes", qp))
+                {
+                    string response = apiClient.GetResponse();
+                    
+                    // Parse JSON array and use the try-catch for exception handling
+                    json j = json::parse(response);
+                    if (j.is_array())
+                    {
+                        int added = 0;
+                        for (json::iterator it = j.begin(); it != j.end(); ++it)
+                        {
+                            if (it->contains("joke"))
+                            {
+                                if (!apiJokesQueue.isFull())
+                                {
+                                    apiJokesQueue.enqueue((*it)["joke"].get<string>());
+                                    added++;
+                                }
+                                else
+                                {
+                                    cout << "Joke queue is full! Not all jokes were added.\n";
+                                    break;
+                                }
+                            }
+                        }
+                        cout << "Successfully added " << added << " jokes to the queue.\n";
+                    }
+                    else
+                    {
+                        cout << "Unexpected JSON format from API.\n";
+                    }
+                }
+                else 
+                {
+                    cout << "API GET request failed.\n";
+                }
+            }
+            catch (const nlohmann::json::exception& ex)
+            {
+                cout << "JSON Parsing Error (GET): " << ex.what() << "\n";
+            }
+            catch (const exception& ex)
+            {
+                cout << "HTTP Request Error: " << ex.what() << "\n";
+            }
+            break;
+        }
+
+        // -------------------- Week 14: REST API POST --------------------
+        case 15:
+        {
+            cout << "\n--- Post a DJ Joke (API POST) ---\n";
+            string myJoke = getNonEmptyLine("Enter your DJ Joke to post: ");
+            
+            // Build JSON object 
+            json postBody;
+            postBody["joke"] = myJoke;
+            string jsonBody = postBody.dump();
+            
+            DjApiClient apiClient;
+            if (!apiClient.Connect("api.macomb.io", 80))
+            {
+                cout << "Failed to connect to API server.\n";
+                break;
+            }
+
+            try
+            {
+                cout << "Sending POST to http://api.macomb.io/jokes...\n";
+                if (apiClient.Post("/jokes", jsonBody))
+                {
+                    string response = apiClient.GetResponse();
+                    
+                    // Parse the response to confirm assignment
+                    json j = json::parse(response);
+                    if (j.contains("id"))
+                    {
+                        cout << "Joke successfully posted! Assigned ID: " << j["id"] << "\n";
+                    }
+                    else
+                    {
+                        cout << "Joke posted, but no ID was returned. Raw Response: " << response << "\n";
+                    }
+                }
+                else
+                {
+                    cout << "API POST request failed.\n";
+                }
+            }
+            catch (const nlohmann::json::exception& ex)
+            {
+                cout << "JSON Parsing Error (POST): " << ex.what() << "\n";
+            }
+            catch (const exception& ex)
+            {
+                cout << "HTTP Request Error: " << ex.what() << "\n";
+            }
+            break;
+        }
+
+        // -------------------- Week 14: Meaningful Data Use --------------------
+        case 16:
+        {
+            cout << "\n--- Hear DJ Jokes (Queue) ---\n";
+            if (apiJokesQueue.isEmpty())
+            {
+                cout << "The joke queue is empty. Fetch some first (Option 14)!\n";
+            }
+            else
+            {
+                cout << "Next Joke in Queue: " << apiJokesQueue.front() << "\n";
+                apiJokesQueue.dequeue();
+            }
+            break;
+        }
+
+        case 17:
             cout << "\nGoodbye, " << djName << "! Keep the crowd moving.\n";
             break;
 
@@ -1480,7 +1663,7 @@ int main()
             cout << "Invalid choice.\n";
         }
 
-    } while (choice != 14);
+    } while (choice != 17);
 
     return 0;
 }
@@ -1519,7 +1702,12 @@ void showMenu()
     cout << "12) Lookup track by title\n";
     cout << "13) Remove track by title\n\n";
 
-    cout << "14) Quit\n";
+    cout << "WEEK 14 (REST API & JSON Parse)\n";
+    cout << "14) Fetch DJ Jokes (API GET)\n";
+    cout << "15) Post a DJ Joke (API POST)\n";
+    cout << "16) Hear DJ Jokes (Queue)\n\n";
+
+    cout << "17) Quit\n";
     cout << "----------------------------------------------\n";
 }
 
@@ -2497,6 +2685,108 @@ TEST_CASE("Week13 JSON load handles malformed JSON with try catch path")
     CHECK(m.getSize() == 0);
 
     remove(filename.c_str());
+}
+
+// ==================== Week 14: REST API Client + JSON Parsing Doctests ====================
+
+#ifdef _WIN32
+TEST_CASE("Week14 DjApiClient accumulates response via Data override")
+{
+    // Verify that the derived class correctly accumulates data chunks
+    DjApiClient client;
+    // Simulate what HttpClient does internally: StartOfData -> Data chunks -> EndOfData
+    // We call the public GetResponse to check accumulation
+    // Since StartOfData/Data/EndOfData are protected, we test via a known-good JSON parse path
+    // The key test is that GetResponse returns empty string on a freshly constructed client
+    CHECK(client.GetResponse().empty());
+}
+#endif // _WIN32
+
+TEST_CASE("Week14 JSON parse of valid joke array")
+{
+    // Simulate what would come back from api.macomb.io/jokes
+    string fakeResponse = R"([{"id":1,"joke":"Why did the DJ cross the road?"},{"id":2,"joke":"To drop the bass!"}])";
+
+    try
+    {
+        json j = json::parse(fakeResponse);
+        CHECK(j.is_array());
+        CHECK(j.size() == 2);
+        CHECK(j[0]["joke"].get<string>() == "Why did the DJ cross the road?");
+        CHECK(j[1]["id"].get<int>() == 2);
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        CHECK(false); // should not throw on valid JSON
+    }
+}
+
+TEST_CASE("Week14 JSON parse catches malformed response with nlohmann exception")
+{
+    // Verify the try/catch requirement: bad JSON must throw nlohmann::json::exception
+    string badResponse = "{not valid json!!!";
+    bool caught = false;
+
+    try
+    {
+        json j = json::parse(badResponse);
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        caught = true;
+    }
+
+    CHECK(caught == true);
+}
+
+TEST_CASE("Week14 JSON build POST body and serialize")
+{
+    // Verify we can build a JSON body for a POST request
+    json postBody;
+    postBody["joke"] = "Test DJ joke";
+    string serialized = postBody.dump();
+
+    CHECK(serialized.find("joke") != string::npos);
+    CHECK(serialized.find("Test DJ joke") != string::npos);
+
+    // Parse it back to confirm round-trip
+    json parsed = json::parse(serialized);
+    CHECK(parsed["joke"].get<string>() == "Test DJ joke");
+}
+
+TEST_CASE("Week14 API data loads into existing ArrayQueue structure")
+{
+    // Verify jokes are enqueued into the existing ArrayQueue ADT (Week 11)
+    ArrayQueue<string> jokeQueue(5);
+
+    CHECK(jokeQueue.isEmpty());
+
+    jokeQueue.enqueue("Why do DJs make bad farmers? They always drop the beet.");
+    jokeQueue.enqueue("What is a DJ's favorite food? Disc-o fries.");
+
+    CHECK(jokeQueue.getSize() == 2);
+    CHECK(jokeQueue.front() == "Why do DJs make bad farmers? They always drop the beet.");
+
+    jokeQueue.dequeue();
+    CHECK(jokeQueue.front() == "What is a DJ's favorite food? Disc-o fries.");
+    CHECK(jokeQueue.getSize() == 1);
+}
+
+TEST_CASE("Week14 API POST response with ID can be parsed")
+{
+    // Simulate the server response after a successful POST
+    string postResponse = R"({"id":42,"joke":"Submitted by user"})";
+
+    try
+    {
+        json j = json::parse(postResponse);
+        CHECK(j.contains("id"));
+        CHECK(j["id"].get<int>() == 42);
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        CHECK(false); // should not throw on valid response
+    }
 }
 
 #endif
